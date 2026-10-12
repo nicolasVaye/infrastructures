@@ -8,6 +8,7 @@ user holds and filter the table on a specific user.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from nicegui import app, ui
@@ -16,6 +17,7 @@ from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
 from core.database import get_session
 from models.enums import UserRole
+from services.i18n import bind_format, t
 from views._common import page_header, safe_auto_refresh
 
 _client_icons = {
@@ -26,18 +28,46 @@ _client_icons = {
 }
 
 
+def _ua_summary(ua: str | None) -> str | None:
+    """Compact 'Browser · OS' label parsed from a raw User-Agent string."""
+    if not ua:
+        return None
+    match = re.search(r'(Edg|OPR|Firefox|Chrome|Safari)/[\d.]+', ua)
+    browser = None
+    if match:
+        name = match.group(1)
+        browser = {'Edg': 'Edge', 'OPR': 'Opera', 'Safari': 'Safari',
+                   'Chrome': 'Chrome', 'Firefox': 'Firefox'}.get(name)
+    if 'Windows NT' in ua:
+        os_name = 'Windows'
+    elif 'Mac OS X' in ua:
+        os_name = 'macOS'
+    elif 'Android' in ua:
+        os_name = 'Android'
+    elif 'iPhone' in ua or 'iPad' in ua:
+        os_name = 'iOS'
+    elif 'Linux' in ua:
+        os_name = 'Linux'
+    else:
+        os_name = None
+    parts = [p for p in (browser, os_name) if p]
+    if parts:
+        return ' · '.join(parts)
+    return ua[:40] + '…' if len(ua) > 40 else ua
+
+
 def _is_admin() -> bool:
     return app.storage.user.get('role') == UserRole.ADMIN.value
 
 
 def content() -> None:
-    page_header('Connected sessions', 'Sessions grouped by user — web, OIDC and automation clients')
+    page_header(t('sessions.title'), t('sessions.subtitle'))
 
     if not _is_admin():
         with ui.column().classes('card w-full items-center gap-2 p-8'):
             ui.icon('lock', size='2rem').classes('text-muted')
-            ui.label('Admin only').classes('section-title')
-            ui.label('You need the admin role to view connected sessions.').classes('text-muted')
+            ui.label(t('sessions.admin_only')).classes('section-title')
+            ui.label(t('sessions.admin_only_desc')).classes('text-muted')
         return
 
     selected_user = {'username': None}
@@ -81,17 +111,17 @@ def content() -> None:
         if not sessions:
             with ui.column().classes('card w-full items-center gap-2 p-8'):
                 ui.icon('cloud_off', size='2rem').classes('text-muted')
-                ui.label('No connected client right now.').classes('text-muted')
+                ui.label(t('sessions.empty')).classes('text-muted')
             return
 
         with ui.column().classes('card w-full gap-0 p-0'):
             with ui.row().classes('w-full items-center px-4 py-3 label-text').style(
                 'border-bottom: 1px solid var(--border, #e4e4e7);'
             ):
-                ui.label('User').classes('flex-1')
-                ui.label('Client').style('width: 130px;')
-                ui.label('IP').style('width: 130px;')
-                ui.label('Last activity').style('width: 190px;')
+                ui.label(t('sessions.col.user')).classes('flex-1')
+                ui.label(t('sessions.col.client')).style('width: 130px;')
+                ui.label(t('sessions.col.ip')).style('width: 130px;')
+                ui.label(t('sessions.col.last_activity')).style('width: 190px;')
                 ui.label('').style('width: 90px;')
 
             for s in sessions:
@@ -105,15 +135,33 @@ def content() -> None:
                             if s['username'] == app.storage.user.get('username'):
                                 with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
                                     ui.icon('verified_user', size='0.9rem')
-                                    ui.label('you')
+                                    ui.label(t('sessions.you'))
                         if count_total[s['username']] > 1:
-                            ui.label(f'+{count_total[s["username"]] - 1} other session(s)').classes('text-xs text-muted')
+                            # Informational: how many OTHER active sessions the
+                            # same user holds (other browsers, a second login,
+                            # automation clients...).
+                            bind_format(
+                                ui.label().classes('text-xs text-muted'),
+                                'sessions.other_sessions',
+                                n=count_total[s['username']] - 1,
+                            )
 
                     icon = _client_icons.get(s.get('client'), 'devices')
                     with ui.element('div').style('width: 130px;'):
                         with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
                             ui.icon(icon, size='0.9rem')
                             ui.label(s.get('client') or 'unknown')
+                        # User-agent summary (e.g. "Chrome - Windows") under
+                        # the client badge; the tooltip carries the full UA.
+                        ua = s.get('user_agent')
+                        ua_label = _ua_summary(ua)
+                        if ua_label:
+                            with ui.element('div').classes('text-xs text-muted truncate').style(
+                                'max-width: 120px; margin-top: 2px;'
+                            ) as ua_el:
+                                ui.label(ua_label)
+                                if ua and ua != ua_label:
+                                    ua_el.tooltip(ua)
 
                     ui.label(s.get('ip') or '—').classes('text-xs text-muted').style(
                         'width: 130px; font-family: monospace;'
@@ -125,8 +173,8 @@ def content() -> None:
                     session_id = s['id']
                     async def _kick(sid: str = session_id) -> None:
                         confirmed = await confirm_dialog(
-                            f'Revoke session {sid[:8]}…?',
-                            title='Kick session', danger=True,
+                            t('sessions.kick_confirm').format(sid=sid[:8]),
+                            title=t('sessions.kick_title'), danger=True,
                         )
                         if not confirmed:
                             return
@@ -134,9 +182,9 @@ def content() -> None:
                             with get_session() as api:
                                 api.delete(f'/sessions/{sid}')
                         except Exception as exc:
-                            await info_dialog(str(exc), title='Not possible', danger=True)
+                            await info_dialog(str(exc), title=t('sessions.not_possible'), danger=True)
                             return
-                        notify('Session revoked', type='warning')
+                        notify(t('sessions.revoked'), type='warning')
                         # The kicked session may be the caller's own: the
                         # refresh then runs unauthenticated and must not raise.
                         safe_auto_refresh(sessions_table.refresh)()

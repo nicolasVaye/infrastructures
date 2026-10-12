@@ -31,6 +31,13 @@ _ACTION_META: dict[str, tuple[str, str]] = {
     AuditAction.USER_DEACTIVATED.value: ('block', 'badge badge-warning'),
     AuditAction.PROFILE_UPDATED.value:  ('manage_accounts', 'badge badge-info'),
     AuditAction.LANGUAGE_CHANGED.value: ('language', 'badge badge-default'),
+    AuditAction.SESSION_REVOKED.value:  ('no_accounts', 'badge badge-warning'),
+    AuditAction.JOB_SUBMITTED.value:    ('play_circle', 'badge badge-info'),
+    AuditAction.JOB_CANCELLED.value:    ('cancel', 'badge badge-warning'),
+    AuditAction.OIDC_LOGIN.value:       ('key', 'badge badge-success'),
+    AuditAction.IDP_CREATED.value:      ('add_link', 'badge badge-success'),
+    AuditAction.IDP_UPDATED.value:      ('edit_note', 'badge badge-info'),
+    AuditAction.IDP_DELETED.value:      ('link_off', 'badge badge-danger'),
 }
 
 _DEFAULT_META = ('history', 'badge badge-default')

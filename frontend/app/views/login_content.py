@@ -16,6 +16,7 @@ from core.security import is_locked, record_attempt
 from services import api_client
 from services.api_client import AuthenticationError
 from components.notifications import notify
+from services.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -126,11 +127,11 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
 
     if reason:
         _msg = (
-            'Your session expired due to inactivity. Please log in again.'
+            t('login.msg_timeout')
             if reason == 'timeout'
-            else 'You were logged out from another tab or session. Please log in again.'
+            else t('login.msg_revoked')
             if reason == 'revoked'
-            else 'Your session has expired. Please log in again.'
+            else t('login.msg_expired')
         )
         ui.timer(0.5, lambda m=_msg: notify(m, type='warning', duration=7000), once=True)
 
@@ -148,22 +149,22 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
 
         with ui.card().classes('login-card').style('width: 100%; max-width: 450px;'):
             with ui.column().classes('w-full gap-4'):
-                ui.label('Infrastructure Login').classes('text-xl font-bold text-center mb-2')
+                ui.label(t('login.title')).classes('text-xl font-bold text-center mb-2')
 
                 with ui.column().classes('w-full gap-3'):
                     with ui.element('div').classes('w-full'):
-                        ui.label('Username').classes('field-label')
+                        ui.label(t('login.username')).classes('field-label')
                         username = ui.input(placeholder='').classes('w-full').props('outlined dense')
                         username.on('keydown.enter', try_login)
 
                     with ui.element('div').classes('w-full'):
-                        ui.label('Password').classes('field-label')
+                        ui.label(t('login.password')).classes('field-label')
                         password = ui.input(
                             password=True, password_toggle_button=True
                         ).classes('w-full').props('outlined dense')
                         password.on('keydown.enter', try_login)
 
-                    ui.button('Sign in', on_click=try_login, color='white') \
+                    ui.button(t('login.sign_in'), on_click=try_login, color='white') \
                         .props('no-caps') \
                         .classes('button button-primary w-full mt-4')
 
@@ -176,7 +177,7 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
                     _providers = []
                 if _providers:
                     ui.separator().classes('my-2')
-                    ui.label('or sign in with').classes('text-xs text-muted w-full text-center')
+                    ui.label(t('login.or_sign_in_with')).classes('text-xs text-muted w-full text-center')
                     for _p in _providers:
                         async def _oidc_login(idp_id: int = _p['id']) -> None:
                             import httpx as _h

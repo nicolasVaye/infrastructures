@@ -15,6 +15,7 @@ from components.password_form import PasswordChangeForm
 from core.database import get_session
 from models.audit import AuditAction
 from services.audit_service import record as audit_record
+from services.i18n import t
 from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,8 @@ async def change_password_page() -> None:
     ):
         with ui.card().classes('login-card').style('width: 100%; max-width: 450px;'):
             with ui.column().classes('w-full gap-4'):
-                ui.label('Set a new password').classes('text-xl font-bold text-center mb-2')
-                ui.label('You must choose a new password before continuing.') \
+                ui.label(t('changepw.title')).classes('text-xl font-bold text-center mb-2')
+                ui.label(t('changepw.desc')) \
                     .classes('text-xs text-muted text-center')
 
                 with ui.column().classes('w-full gap-3'):

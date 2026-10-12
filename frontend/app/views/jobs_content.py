@@ -11,6 +11,7 @@ from nicegui import app, ui
 from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
 from core.database import get_session
+from services.i18n import t
 from views._common import page_header, safe_auto_refresh
 
 # Column styling (badge class, text class, icon, accent color)
@@ -22,12 +23,14 @@ _COL_STYLE = {
     'cancelled': ('badge-warning',  'text-warning',  'cancel',             '#fbbf24'),
 }
 
+# status -> (title key, description key): translated at render time so a
+# live language switch shows up on the next board refresh.
 _COL_TITLE = {
-    'queued':    ('Queued',    'Waiting for a worker to claim it'),
-    'running':   ('Running',   'Currently executed by a worker'),
-    'succeeded': ('Succeeded',  'Finished without error'),
-    'failed':    ('Failed',     'Terminated with an error'),
-    'cancelled': ('Cancelled',  'Aborted before completion'),
+    'queued':    ('jobs.col.queued',    'jobs.col.queued_desc'),
+    'running':   ('jobs.col.running',   'jobs.col.running_desc'),
+    'succeeded': ('jobs.col.succeeded', 'jobs.col.succeeded_desc'),
+    'failed':    ('jobs.col.failed',    'jobs.col.failed_desc'),
+    'cancelled': ('jobs.col.cancelled', 'jobs.col.cancelled_desc'),
 }
 
 _COL_ORDER = ['queued', 'running', 'succeeded', 'failed', 'cancelled']
@@ -37,7 +40,7 @@ _TYPE_ICONS = {'demo.sleep': 'bedtime'}
 
 
 def content() -> None:
-    page_header('Jobs', 'Asynchronous jobs executed by the worker fleet')
+    page_header(t('jobs.title'), t('jobs.subtitle'))
 
     selected = {'status': None}  # None = all columns
 
@@ -63,9 +66,9 @@ def content() -> None:
                 'border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden'):
             with ui.element('div').style(
                     'flex:1;min-width:160px;padding:18px 24px;border-right:1px solid var(--border)'):
-                ui.label('Total jobs').classes('label-text mb-1')
+                ui.label(t('jobs.total')).classes('label-text mb-1')
                 ui.label(str(total)).classes('text-2xl font-bold text-info')
-                ui.label('last 200 submissions').classes('text-xs text-muted mt-1')
+                ui.label(t('jobs.last_n')).classes('text-xs text-muted mt-1')
 
             for status in _COL_ORDER:
                 badge_cls, text_cls, icon, color = _COL_STYLE[status]
@@ -80,18 +83,18 @@ def content() -> None:
                                                    else selected.update(status=s), board.refresh())):
                     with ui.row().classes('items-center gap-2 mb-1'):
                         ui.icon(icon).style(f'font-size:1rem;color:{color}')
-                        ui.label(_COL_TITLE[status][0]).classes('label-text')
+                        ui.label(t(_COL_TITLE[status][0])).classes('label-text')
                     ui.label(str(cnt)).classes(f'text-2xl font-bold {text_cls}')
-                    ui.label(f'{pct}% of jobs').classes('text-xs text-muted mt-1')
+                    ui.label(t('jobs.pct').format(pct=pct)).classes('text-xs text-muted mt-1')
 
         # -- Filter banner --------------------------------------------------
         if selected['status'] is not None:
             with ui.row().classes('w-full items-center gap-2 mb-2'):
                 ui.icon('filter_alt', size='1rem').classes('text-info')
-                ui.label(f'Filtered on: {selected["status"]}').classes('text-sm')
+                ui.label(t('jobs.filtered_on').format(status=selected['status'])).classes('text-sm')
                 ui.button(icon='clear', on_click=lambda: (selected.update(status=None),
                                                           board.refresh())
-                          ).props('flat dense round').tooltip('Clear filter')
+                          ).props('flat dense round').tooltip(t('jobs.clear_filter'))
 
         # -- Kanban columns -------------------------------------------------
         visible = [selected['status']] if selected['status'] else _COL_ORDER
@@ -108,13 +111,13 @@ def content() -> None:
                             f'padding-bottom:12px;border-bottom:2px solid {col_color}'):
                         with ui.row().classes('items-center gap-2'):
                             ui.icon(col_icon).style(f'font-size:1.1rem;color:{col_color}')
-                            ui.label(_COL_TITLE[status][0]).classes('font-semi text-base')
+                            ui.label(t(_COL_TITLE[status][0])).classes('font-semi text-base')
                         ui.label(str(len(column_jobs))).classes(f'badge {badge_cls}')
 
                     # Job cards
                     with ui.column().classes('gap-3 w-full'):
                         if not column_jobs:
-                            ui.label(_COL_TITLE[status][1]).classes(
+                            ui.label(t(_COL_TITLE[status][1])).classes(
                                 'text-xs text-faint text-center py-6')
 
                         for j in column_jobs:
@@ -141,7 +144,7 @@ def content() -> None:
                                     ui.label(str(j['result'])[:110]).classes(
                                         'text-xs text-muted truncate mb-2')
                                 else:
-                                    ui.label(_COL_TITLE[status][1]).classes(
+                                    ui.label(t(_COL_TITLE[status][1])).classes(
                                         'text-xs text-muted mb-2')
 
                                 # Chips: created by + timestamps
@@ -163,8 +166,8 @@ def content() -> None:
                                     if status in ('queued', 'running'):
                                         async def _cancel(job_id: int = j['id']) -> None:
                                             confirmed = await confirm_dialog(
-                                                f'Cancel job #{job_id}?', title='Cancel job',
-                                                danger=True)
+                                                t('jobs.cancel_confirm').format(id=job_id),
+                                                title=t('jobs.cancel_title'), danger=True)
                                             if not confirmed:
                                                 return
                                             try:
@@ -173,22 +176,22 @@ def content() -> None:
                                             except Exception as exc:
                                                 await info_dialog(
                                                     str(getattr(exc, 'detail', exc)),
-                                                    title='Not possible', danger=True)
+                                                    title=t('jobs.not_possible'), danger=True)
                                                 return
-                                            notify(f'Job #{job_id} cancelled', type='warning')
+                                            notify(t('jobs.cancelled_msg').format(id=job_id), type='warning')
                                             board.refresh()
 
-                                        ui.button('Cancel', color='white', on_click=_cancel) \
+                                        ui.button(t('jobs.cancel'), color='white', on_click=_cancel) \
                                             .props('flat no-caps') \
                                             .classes('button button-outline button-sm')
 
         if not jobs:
             with ui.column().classes('card w-full items-center gap-2 p-8 mt-2'):
                 ui.icon('inbox', size='2rem').classes('text-muted')
-                ui.label('No job submitted yet — use the "Submit job" page.').classes('text-muted')
+                ui.label(t('jobs.empty')).classes('text-muted')
 
     with ui.row().classes('w-full justify-end'):
-        ui.button('Submit a new job', icon='add',
+        ui.button(t('jobs.submit_new'), icon='add',
                   on_click=lambda: ui.navigate.to('/jobs/new')).props('outline no-caps')
 
     board()

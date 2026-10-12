@@ -185,17 +185,17 @@ def frame(title: str, version: str, get_logo_func=None):
         with ui.link('', '/jobs').classes('w-full no-underline text-black').style('border-radius: 2rem;') as jobs_link:
             with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
                 jobs_icon = ui.icon('list_alt').classes('ml-5 text-2xl flex-shrink-0')
-                jobs_label = ui.label('Jobs').classes('text-lg sidebar-label ml-3 flex-shrink-0')
+                jobs_label = i18n.bind(ui.label('Jobs').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.jobs')
                 sidebar_labels.append(jobs_label)
-            sidebar_hints.append(sidebar_hint('Jobs', translate=False))
+            sidebar_hints.append(sidebar_hint('nav.jobs'))
         nav_links.append({'link': jobs_link, 'icon': jobs_icon, 'patterns': ['/jobs'], 'exact': False})
 
         with ui.link('', '/jobs/new').classes('w-full no-underline text-black').style('border-radius: 2rem;') as job_new_link:
             with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
                 job_new_icon = ui.icon('play_circle').classes('ml-5 text-2xl flex-shrink-0')
-                job_new_label = ui.label('Submit job').classes('text-lg sidebar-label ml-3 flex-shrink-0')
+                job_new_label = i18n.bind(ui.label('Submit job').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.submit_job')
                 sidebar_labels.append(job_new_label)
-            sidebar_hints.append(sidebar_hint('Submit job', translate=False))
+            sidebar_hints.append(sidebar_hint('nav.submit_job'))
         nav_links.append({'link': job_new_link, 'icon': job_new_icon, 'patterns': ['/jobs/new'], 'exact': False})
 
 
@@ -220,7 +220,7 @@ def frame(title: str, version: str, get_logo_func=None):
         
 
         # Admin-only nav entries: the role comes from the login snapshot in
-        # the shared session storage (no extra /auth/me round-trip here).
+        # the shared session storage (no /auth/me round-trip in the header).
         from models.enums import UserRole
         if app.storage.user.get('role') == UserRole.ADMIN.value:
             with ui.link('', '/users').classes('w-full no-underline text-black').style('border-radius: 2rem;') as users_link:
@@ -250,17 +250,17 @@ def frame(title: str, version: str, get_logo_func=None):
             with ui.link('', '/sessions').classes('w-full no-underline text-black').style('border-radius: 2rem;') as sessions_link:
                 with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
                     sessions_icon = ui.icon('devices').classes('ml-5 text-2xl flex-shrink-0')
-                    sessions_label = ui.label('Sessions').classes('text-lg sidebar-label ml-3 flex-shrink-0')
+                    sessions_label = i18n.bind(ui.label('Sessions').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.sessions')
                     sidebar_labels.append(sessions_label)
-                sidebar_hints.append(sidebar_hint('sessions.title'))
+                sidebar_hints.append(sidebar_hint('nav.sessions'))
             nav_links.append({'link': sessions_link, 'icon': sessions_icon, 'patterns': ['/sessions'], 'exact': False})
 
             with ui.link('', '/idps').classes('w-full no-underline text-black').style('border-radius: 2rem;') as idps_link:
                 with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
                     idps_icon = ui.icon('vpn_key').classes('ml-5 text-2xl flex-shrink-0')
-                    idps_label = ui.label('Providers').classes('text-lg sidebar-label ml-3 flex-shrink-0')
+                    idps_label = i18n.bind(ui.label('Providers').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.providers')
                     sidebar_labels.append(idps_label)
-                sidebar_hints.append(sidebar_hint('Providers', translate=False))
+                sidebar_hints.append(sidebar_hint('nav.providers'))
             nav_links.append({'link': idps_link, 'icon': idps_icon, 'patterns': ['/idps'], 'exact': False})
 
         ui.separator()

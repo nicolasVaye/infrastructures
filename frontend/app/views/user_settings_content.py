@@ -172,6 +172,9 @@ def content() -> None:
                     or _avatar['pending'] is not None
                 )
                 (save_btn.enable if dirty else save_btn.disable)()
+                # Clear changes only makes sense when there IS something to
+                # discard: keep it in sync with the same dirty state.
+                (clear_btn.enable if dirty else clear_btn.disable)()
 
             def _clear_changes() -> None:
                 """Discard every pending edit and restore the saved values."""
@@ -230,6 +233,7 @@ def content() -> None:
                     .props('no-caps outline').classes('button button-ghost'),
                     'settings.clear_changes',
                 )
+                clear_btn.disable()
                 save_btn = i18n.bind(
                     ui.button(t('settings.save'), icon='save', on_click=_save_profile)
                     .props('no-caps').classes('button button-primary'),
