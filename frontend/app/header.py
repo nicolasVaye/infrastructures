@@ -219,7 +219,10 @@ def frame(title: str, version: str, get_logo_func=None):
         nav_links.append({'link': design_system_link, 'icon': design_system_icon, 'patterns': ['/design-system'], 'exact': False})
         
 
-        if me and me.is_admin:
+        # Admin-only nav entries: the role comes from the login snapshot in
+        # the shared session storage (no extra /auth/me round-trip here).
+        from models.enums import UserRole
+        if app.storage.user.get('role') == UserRole.ADMIN.value:
             with ui.link('', '/users').classes('w-full no-underline text-black').style('border-radius: 2rem;') as users_link:
                 with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
                     users_icon = ui.icon('group').classes('ml-5 text-2xl flex-shrink-0')
@@ -353,7 +356,8 @@ def frame(title: str, version: str, get_logo_func=None):
             with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), ui.navigate.to('/account')]):
                 ui.icon('person').classes('mobile-sheet-icon')
                 i18n.bind(ui.label(i18n.t('account.settings')).classes('mobile-sheet-label'), 'account.settings')
-            if me and me.is_admin:
+            from models.enums import UserRole
+            if app.storage.user.get('role') == UserRole.ADMIN.value:
                 with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), ui.navigate.to('/users')]):
                     ui.icon('group').classes('mobile-sheet-icon')
                     i18n.bind(ui.label(i18n.t('nav.users')).classes('mobile-sheet-label'), 'nav.users')
