@@ -30,6 +30,13 @@ class AuditAction(enum.Enum):
     USER_DEACTIVATED = 'user_deactivated'
     PROFILE_UPDATED = 'profile_updated'
     LANGUAGE_CHANGED = 'language_changed'
+    OIDC_LOGIN = 'oidc_login'
+    IDP_CREATED = 'idp_created'
+    IDP_UPDATED = 'idp_updated'
+    IDP_DELETED = 'idp_deleted'
+    SESSION_REVOKED = 'session_revoked'
+    JOB_SUBMITTED = 'job_submitted'
+    JOB_CANCELLED = 'job_cancelled'
 
 
 @dataclass(frozen=True)
