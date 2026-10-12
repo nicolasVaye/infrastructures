@@ -1,42 +1,18 @@
 """Audit log domain model.
 
-A plain data container describing a single recorded action ("who did what").
-All persistence lives in :class:`services.audit_service.AuditService`; the model
-itself stays free of database dependencies so it can be reused and tested alone.
+The AuditAction enum lives in shared.enums (single source of truth shared with
+the backend); it is re-exported here for the historical
+``from models.audit import AuditAction`` imports. Only the AuditEntry
+dataclass — a frontend-side view of one audit row — is defined here.
 """
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 
+from shared.enums import AuditAction
 
-class AuditAction(enum.Enum):
-    """Stable identifiers for the actions worth recording in the audit trail.
-
-    The values are stored verbatim in the database, so keep them stable; the UI
-    maps each one to a translated label and an icon.
-    """
-
-    LOGIN = 'login'
-    LOGIN_FAILED = 'login_failed'
-    LOGOUT = 'logout'
-    PASSWORD_CHANGED = 'password_changed'
-    PASSWORD_RESET = 'password_reset'
-    USER_CREATED = 'user_created'
-    USER_DELETED = 'user_deleted'
-    ROLE_CHANGED = 'role_changed'
-    USER_ACTIVATED = 'user_activated'
-    USER_DEACTIVATED = 'user_deactivated'
-    PROFILE_UPDATED = 'profile_updated'
-    LANGUAGE_CHANGED = 'language_changed'
-    OIDC_LOGIN = 'oidc_login'
-    IDP_CREATED = 'idp_created'
-    IDP_UPDATED = 'idp_updated'
-    IDP_DELETED = 'idp_deleted'
-    SESSION_REVOKED = 'session_revoked'
-    JOB_SUBMITTED = 'job_submitted'
-    JOB_CANCELLED = 'job_cancelled'
+__all__ = ['AuditAction', 'AuditEntry']
 
 
 @dataclass(frozen=True)
