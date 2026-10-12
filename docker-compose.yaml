@@ -1,0 +1,108 @@
+# Infrastructures monorepo — full stack (Postgres + API + workers + NiceGUI frontend)
+#
+#   docker compose up --build
+#
+#   frontend  → http://localhost:8080   (login: admin / admin, forced password change)
+#   api       → http://localhost:8000/docs
+#
+# Horizontal scaling examples:
+#   docker compose up --scale backend=3 --scale worker=4
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: infra
+      POSTGRES_PASSWORD: infra
+      POSTGRES_DB: infrastructures
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infra -d infrastructures"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: &backend_env
+      DATABASE_URL: postgresql+asyncpg://infra:infra@postgres:5432/infrastructures
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      CORS_ORIGINS: '["http://localhost:8080"]'
+      # Public URL of the frontend as seen from the browser; the OIDC
+      # redirect_uri is {base}/auth/oidc/callback
+      OIDC_REDIRECT_BASE_URL: ${OIDC_REDIRECT_BASE_URL:-http://localhost:8080}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    # Same image as the backend; only the command differs. Scale freely:
+    # every replica claims jobs with FOR UPDATE SKIP LOCKED.
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["uv", "run", "python", "-m", "app.worker"]
+    environment:
+      <<: *backend_env
+      SCHEDULER: "0"   # run the CRON scheduler on exactly one replica in production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    # Dedicated single-instance CRON scheduler (enqueues jobs into the queue).
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["uv", "run", "python", "-m", "app.worker"]
+    environment:
+      <<: *backend_env
+      SCHEDULER: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      BACKEND_URL: http://backend:8000
+      STORAGE_SECRET: ${STORAGE_SECRET:-please-change-me}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    # Note: NiceGUI holds a WebSocket per browser session — put a sticky-session
+    # load balancer in front if you scale this service beyond one replica.
+
+  # Optional local Keycloak for testing the OIDC federation end to end:
+  #   docker compose --profile keycloak up
+  #   - admin console: http://localhost:8081  (admin/admin, change in .env)
+  #   - create a realm, a confidential client with redirect_uri:
+  #     http://localhost:8080/auth/oidc/callback
+  #   - then declare the provider on the frontend 'Providers' page with
+  #     issuer_url http://keycloak:8080/realms/<realm> (or the public URL)
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    profiles: ["keycloak"]
+    command: ["start-dev"]
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

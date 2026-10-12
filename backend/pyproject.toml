@@ -1,0 +1,35 @@
+[project]
+name = "infrastructures-backend"
+version = "0.1.0"
+description = "Infrastructure backend: FastAPI REST API + async job workers"
+requires-python = ">=3.11"
+dependencies = [
+    "infrastructures-shared",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",      # dev fallback when DATABASE_URL is sqlite
+    "asyncpg>=0.29",        # postgres driver (production)
+    "pydantic-settings>=2.4",
+    "pyjwt>=2.9",
+    "httpx>=0.27",
+    "apscheduler>=3.10",
+    "croniter>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.uv.sources]
+infrastructures-shared = { path = "../shared", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+uv.lock
+
+# Data / secrets
+.env
+*.db
+backend/app/infrastructure.db
+frontend/app/data/
+frontend/app/backup/*
+!frontend/app/backup/.gitkeep
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

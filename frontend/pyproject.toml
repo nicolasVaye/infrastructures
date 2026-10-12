@@ -1,0 +1,20 @@
+[project]
+name = "infrastructures-frontend"
+version = "0.1.0"
+description = "Infrastructure frontend: NiceGUI (component-based template) talking to the FastAPI backend"
+requires-python = ">=3.11"
+dependencies = [
+    "infrastructures-shared",
+    "nicegui[highcharts]>=3.9.0",
+    "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.uv.sources]
+infrastructures-shared = { path = "../shared", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
