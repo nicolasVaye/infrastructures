@@ -161,6 +161,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'appsettings.log_file':     {'en': 'Log file', 'de': 'Protokolldatei'},
     'appsettings.level_saved':  {'en': 'Log level set to {level}.', 'de': 'Protokollebene auf {level} gesetzt.'},
     'appsettings.admin_only':   {'en': 'Application settings are available to administrators only.', 'de': 'App-Einstellungen sind nur für Administratoren verfügbar.'},
+    'appsettings.tab.general':  {'en': 'General', 'de': 'Allgemein'},
+    'appsettings.tab.users':    {'en': 'Users & roles', 'de': 'Benutzer & Rollen'},
+    'appsettings.tab.sessions': {'en': 'Sessions', 'de': 'Sitzungen'},
+    'appsettings.tab.audit':    {'en': 'Audit log', 'de': 'Audit-Protokoll'},
+    'appsettings.tab.idps':      {'en': 'Providers', 'de': 'Anbieter'},
 
     # Audit log view
     'audit.title':        {'en': 'Audit Log', 'de': 'Audit-Protokoll'},

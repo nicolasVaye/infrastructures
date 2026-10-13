@@ -9,6 +9,16 @@ from pathlib import Path
 
 from fastapi import Response
 from fastapi.responses import FileResponse
+
+# engine.io caps how many socket packets one HTTP payload may carry (16 by
+# default). After a server restart, the browser's socket.io client replays its
+# whole queued event buffer over long-polling and the payload is rejected with
+# 'ValueError: Too many packets in payload' — every UI event (and the click
+# that triggered it) is then silently lost. Raise the cap BEFORE importing
+# nicegui (recommended fix, see zauberzeug/nicegui#209).
+from engineio.payload import Payload
+Payload.max_decode_packets = 500
+
 from nicegui import app, ui
 
 import header
@@ -223,12 +233,13 @@ def root():
     '/print-demo' : print_demo,
     '/settings'   : settings,
     '/account'    : account,
-    '/users'      : users,
-    '/audit'      : audit,
-    '/sessions'   : connected_sessions,
     '/jobs'       : jobs_list,
     '/jobs/new'   : jobs_new,
-    '/idps'       : providers,
+    # Admin areas now live as tabs inside /settings; old URLs redirect there.
+    '/users'      : _legacy_admin_redirect,
+    '/audit'      : _legacy_admin_redirect,
+    '/sessions'   : _legacy_admin_redirect,
+    '/idps'       : _legacy_admin_redirect,
     })
 
 
@@ -271,26 +282,19 @@ def print_demo():
 def settings():
     _localized(settings_content.content)
 
+
+def _legacy_admin_redirect():
+    """Old bookmarked admin URLs (/users, /audit…) land on the /settings hub."""
+    ui.navigate.to('/settings')
+
 def account():
     user_settings_content.content()
-
-def users():
-    _localized(users_content.content)
-
-def audit():
-    _localized(audit_content.content)
-
-def connected_sessions():
-    _localized(sessions_content.content)
 
 def jobs_list():
     _localized(jobs_content.content)
 
 def jobs_new():
     _localized(job_submit_content.content)
-
-def providers():
-    _localized(idps_content.content)
 
 def production_search(searchFilter):
     _localized(production_content.content, searchFilter=searchFilter)

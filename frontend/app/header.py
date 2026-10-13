@@ -87,9 +87,6 @@ def frame(title: str, version: str, get_logo_func=None):
                         ui.icon('person').classes('account-icon')
                         i18n.bind(ui.label(i18n.t('account.account')), 'account.account')
                     if u and u.is_admin:
-                        with ui.row().classes('account-menu-item').style('min-height: 48px;').on('click', lambda: ui.navigate.to('/users')):
-                            ui.icon('group').classes('account-icon')
-                            i18n.bind(ui.label(i18n.t('nav.users')), 'nav.users')
                         with ui.row().classes('account-menu-item').style('min-height: 48px;').on('click', lambda: ui.navigate.to('/settings')):
                             ui.icon('tune').classes('account-icon')
                             i18n.bind(ui.label(i18n.t('appsettings.title')), 'appsettings.title')
@@ -223,45 +220,15 @@ def frame(title: str, version: str, get_logo_func=None):
         # the shared session storage (no /auth/me round-trip in the header).
         from models.enums import UserRole
         if app.storage.user.get('role') == UserRole.ADMIN.value:
-            with ui.link('', '/users').classes('w-full no-underline text-black').style('border-radius: 2rem;') as users_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                    users_icon = ui.icon('group').classes('ml-5 text-2xl flex-shrink-0')
-                    users_label = i18n.bind(ui.label('Users').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.users')
-                    sidebar_labels.append(users_label)
-                sidebar_hints.append(sidebar_hint('nav.users'))
-            nav_links.append({'link': users_link, 'icon': users_icon, 'patterns': ['/users'], 'exact': False})
-
+            # Single admin hub: users, sessions, audit and providers are now
+            # tabs inside /settings (see views/settings_content.py).
             with ui.link('', '/settings').classes('w-full no-underline text-black').style('border-radius: 2rem;') as settings_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
+                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap') as settings_link_row:
                     settings_icon = ui.icon('tune').classes('ml-5 text-2xl flex-shrink-0')
                     settings_label = i18n.bind(ui.label('App Settings').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'appsettings.title')
                     sidebar_labels.append(settings_label)
                 sidebar_hints.append(sidebar_hint('appsettings.title'))
             nav_links.append({'link': settings_link, 'icon': settings_icon, 'patterns': ['/settings'], 'exact': False})
-
-            with ui.link('', '/audit').classes('w-full no-underline text-black').style('border-radius: 2rem;') as audit_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                    audit_icon = ui.icon('history').classes('ml-5 text-2xl flex-shrink-0')
-                    audit_label = i18n.bind(ui.label('Audit Log').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'audit.title')
-                    sidebar_labels.append(audit_label)
-                sidebar_hints.append(sidebar_hint('audit.title'))
-            nav_links.append({'link': audit_link, 'icon': audit_icon, 'patterns': ['/audit'], 'exact': False})
-
-            with ui.link('', '/sessions').classes('w-full no-underline text-black').style('border-radius: 2rem;') as sessions_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                    sessions_icon = ui.icon('devices').classes('ml-5 text-2xl flex-shrink-0')
-                    sessions_label = i18n.bind(ui.label('Sessions').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.sessions')
-                    sidebar_labels.append(sessions_label)
-                sidebar_hints.append(sidebar_hint('nav.sessions'))
-            nav_links.append({'link': sessions_link, 'icon': sessions_icon, 'patterns': ['/sessions'], 'exact': False})
-
-            with ui.link('', '/idps').classes('w-full no-underline text-black').style('border-radius: 2rem;') as idps_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                    idps_icon = ui.icon('vpn_key').classes('ml-5 text-2xl flex-shrink-0')
-                    idps_label = i18n.bind(ui.label('Providers').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.providers')
-                    sidebar_labels.append(idps_label)
-                sidebar_hints.append(sidebar_hint('nav.providers'))
-            nav_links.append({'link': idps_link, 'icon': idps_icon, 'patterns': ['/idps'], 'exact': False})
 
         ui.separator()
 
@@ -358,15 +325,10 @@ def frame(title: str, version: str, get_logo_func=None):
                 i18n.bind(ui.label(i18n.t('account.settings')).classes('mobile-sheet-label'), 'account.settings')
             from models.enums import UserRole
             if app.storage.user.get('role') == UserRole.ADMIN.value:
-                with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), ui.navigate.to('/users')]):
-                    ui.icon('group').classes('mobile-sheet-icon')
-                    i18n.bind(ui.label(i18n.t('nav.users')).classes('mobile-sheet-label'), 'nav.users')
+                # Single admin hub on mobile too: everything lives in /settings.
                 with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), ui.navigate.to('/settings')]):
                     ui.icon('tune').classes('mobile-sheet-icon')
                     i18n.bind(ui.label(i18n.t('appsettings.title')).classes('mobile-sheet-label'), 'appsettings.title')
-                with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), ui.navigate.to('/audit')]):
-                    ui.icon('history').classes('mobile-sheet-icon')
-                    i18n.bind(ui.label(i18n.t('audit.title')).classes('mobile-sheet-label'), 'audit.title')
             async def _mobile_logout() -> None:
                 menu_sheet.close()
                 await logout()
