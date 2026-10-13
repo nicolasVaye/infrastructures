@@ -12,6 +12,7 @@ dependencies = [
     "asyncpg>=0.29",        # postgres driver (production)
     "pydantic-settings>=2.4",
     "pyjwt>=2.9",
+    "cryptography>=43.0",   # RS256/ES256 OIDC ID token verification (Keycloak signs RS256)
     "httpx>=0.27",
     "apscheduler>=3.10",
     "croniter>=2.0",
