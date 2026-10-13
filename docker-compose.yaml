@@ -93,15 +93,26 @@ services:
   #     http://localhost:8080/auth/oidc/callback
   #   - then declare the provider on the frontend 'Providers' page with
   #     issuer_url http://keycloak:8080/realms/<realm> (or the public URL)
+  # Keycloak listens on 8081 directly (same port inside and outside), and the
+  # network alias 'keycloak.localhost' lets the backend container resolve the
+  # issuer URL exactly like the browser does (*.localhost -> 127.0.0.1 from
+  # the host, alias -> keycloak container from the compose network). No
+  # host-gateway / host-firewall involved.
+  # Declare in /settings -> Providers: issuer_url
+  #   http://keycloak.localhost:8081/realms/<realm>
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     profiles: ["keycloak"]
-    command: ["start-dev"]
+    command: ["start-dev", "--http-port=8081"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    networks:
+      default:
+        aliases:
+          - keycloak.localhost
     ports:
-      - "8081:8080"
+      - "8081:8081"
     restart: unless-stopped
 
 volumes:

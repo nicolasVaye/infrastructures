@@ -11,7 +11,7 @@ import logging
 
 from sqlalchemy import select, text
 
-from app.core.db import (Base, RoleRecord, UserRecord, get_engine,
+from app.core.db import (Base, RoleRecord, ScheduleRecord, UserRecord, get_engine,
                          get_session_factory)
 from app.core.security import hash_password
 from app.core.config import get_settings
@@ -72,6 +72,22 @@ async def ensure_schema() -> None:
                     select(RoleRecord).where(RoleRecord.name == name)
                 )).first()
             role_ids[name] = role.id
+
+        # Daily session purge (see maintenance.cleanup_sessions in the
+        # worker). Seeded once, idempotently; admins can disable or retune
+        # it through the schedules table.
+        cleanup = (await session.scalars(
+            select(ScheduleRecord).where(
+                ScheduleRecord.job_type == "maintenance.cleanup_sessions")
+        )).first()
+        if cleanup is None:
+            session.add(ScheduleRecord(
+                job_type="maintenance.cleanup_sessions",
+                params={"keep_days": 7},
+                cron="0 3 * * *",  # daily at 03:00
+                enabled=True,
+            ))
+            logger.info("Seeded daily session cleanup schedule (03:00, keep 7 days).")
 
         admin = (await session.scalars(
             select(UserRecord)

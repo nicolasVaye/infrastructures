@@ -16,11 +16,13 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from app.core.config import get_settings
 from app.events import notify_event
-from app.core.db import JobRecord, ScheduleRecord, get_session_factory, utcnow
+from app.core.db import (
+    JobRecord, ScheduleRecord, SessionRecord, get_session_factory, utcnow,
+)
 from shared.enums import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,31 @@ async def demo_sleep(job: JobRecord, params: dict[str, Any]) -> dict[str, Any]:
 
 class CancelledError(Exception):
     pass
+
+
+@register("maintenance.cleanup_sessions")
+async def cleanup_sessions(job: JobRecord, params: dict[str, Any]) -> dict[str, Any]:
+    """Purge dead session rows from the database.
+
+    Sessions are only flagged when they end (revoked_at on logout/kick,
+    expires_at on natural expiry) so the Sessions page and the audit trail
+    keep working; without a purge the table grows forever. This job deletes
+    rows whose end date is older than params['keep_days'] (default 7).
+    """
+    keep_days = int(params.get("keep_days", 7))
+    cutoff = utcnow() - timedelta(days=keep_days)
+    async with get_session_factory()() as session:
+        expired = await session.execute(
+            delete(SessionRecord).where(SessionRecord.expires_at < cutoff)
+        )
+        revoked = await session.execute(
+            delete(SessionRecord).where(
+                SessionRecord.revoked_at.is_not(None),
+                SessionRecord.revoked_at < cutoff,
+            )
+        )
+        await session.commit()
+    return {"expired_deleted": expired.rowcount, "revoked_deleted": revoked.rowcount}
 
 
 # --- queue consumption --------------------------------------------------------
