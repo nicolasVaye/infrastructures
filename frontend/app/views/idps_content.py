@@ -86,7 +86,7 @@ def content() -> None:
                         idps_table.refresh()
 
                     async def _verify(item: dict = i) -> None:
-                        handle = await notify_ongoing(
+                        handle = notify_ongoing(
                             t('idps.verifying').format(name=item['name']))
                         try:
                             with get_session() as api:

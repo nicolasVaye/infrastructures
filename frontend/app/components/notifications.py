@@ -7,7 +7,7 @@ Usage:
     notify('Review your input', type='warning')
     notify('Server restarted', type='info')
 
-    handle = await notify_ongoing('Processing…', title='Loading')
+    handle = notify_ongoing('Processing…', title='Loading')
     await asyncio.sleep(3)
     handle.dismiss()
 """
