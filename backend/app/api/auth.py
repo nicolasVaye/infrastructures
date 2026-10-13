@@ -29,6 +29,13 @@ from shared.models import (Heartbeat, LoginRequest, OIDCAuthorizeOut,
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
+def _user_agent(request: Request) -> str | None:
+    """Real browser UA when the frontend forwards it (X-User-Agent), else the
+    caller's own User-Agent. Without the forwarded header every session would
+    record the frontend's httpx UA ('python-httpx/…') instead of the browser."""
+    return request.headers.get("X-User-Agent") or request.headers.get("User-Agent")
+
 _INACTIVE_MESSAGE = "Account disabled"
 
 
@@ -72,7 +79,7 @@ async def login(body: LoginRequest, request: Request, session: DbSession) -> Tok
         session, user,
         client=client_label,
         ip=client_ip(request),
-        user_agent=request.headers.get("User-Agent"),
+        user_agent=_user_agent(request),
     )
     access, refresh, ttl = create_token_pair(user.id, session_record.id)
     await record(session, AuditAction.LOGIN, user_id=user.id,
@@ -196,7 +203,7 @@ async def oidc_callback(idp_id: int, body: OIDCCallbackIn, request: Request,
         session, user,
         client=client_label,
         ip=client_ip(request),
-        user_agent=request.headers.get("User-Agent"),
+        user_agent=_user_agent(request),
     )
     access, refresh, ttl = create_token_pair(user.id, session_record.id)
     await record(session, AuditAction.OIDC_LOGIN, user_id=user.id,

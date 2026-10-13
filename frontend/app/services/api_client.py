@@ -25,7 +25,8 @@ class AuthenticationError(Exception):
         self.message = message
 
 
-async def login(username: str, password: str, *, client_ip: str | None = None) -> dict:
+async def login(username: str, password: str, *, client_ip: str | None = None,
+                user_agent: str | None = None) -> dict:
     """Authenticate against the backend and store JWTs in the session storage.
 
     Returns the ``/auth/me`` payload (user info). Raises AuthenticationError
@@ -35,7 +36,8 @@ async def login(username: str, password: str, *, client_ip: str | None = None) -
         response = await client.post(
             '/auth/login',
             json={'username': username, 'password': password},
-            headers={'X-Client-Label': 'web'},
+            headers={'X-Client-Label': 'web',
+                     **({'X-User-Agent': user_agent} if user_agent else {})},
         )
         if response.status_code in (401, 403):
             detail = response.json().get('detail', 'Invalid credentials')

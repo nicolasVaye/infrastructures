@@ -47,7 +47,8 @@ async def oidc_callback(request: Request, code: str = '', state: str = '',
                 response = await client.post(
                     f'/auth/oidc/{idp}/callback',
                     json={'code': code, 'state': state},
-                    headers={'X-Client-Label': 'oidc'},
+                    headers={'X-Client-Label': 'oidc',
+                             'X-User-Agent': request.headers.get('User-Agent', '')},
                 )
                 if response.status_code != 200:
                     detail = response.json().get('detail', response.text) if response.content else response.text

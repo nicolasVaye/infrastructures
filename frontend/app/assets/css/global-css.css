@@ -1405,3 +1405,20 @@ q-menu {
 @media (max-width: 1024px) {
   .header-account-btn { display: none !important; }
 }
+
+/* Audit filter dropdown entries: plain <button> rows styled like the
+   list's badges (icon + colour), full-width and hoverable. */
+button.audit-filter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 14px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+}
+button.audit-filter-item:hover {
+    background: var(--faint, #f4f4f5);
+}

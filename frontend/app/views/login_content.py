@@ -48,6 +48,10 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
     client_ip: str = forwarded_for.split(',')[0].strip() if forwarded_for else (
         request.client.host if request.client else 'unknown'
     )
+    # The browser's real User-Agent (this page request comes straight from
+    # the browser, not through httpx) — forwarded to the backend so the
+    # session record shows 'Chrome · Windows' instead of 'python-httpx'.
+    browser_ua: str = request.headers.get('User-Agent', '')
 
     async def try_login() -> None:
         if not username.value or not password.value:
@@ -64,7 +68,8 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
                 return
 
         try:
-            user = await api_client.login(username.value.strip(), password.value)
+            user = await api_client.login(username.value.strip(), password.value,
+                                          user_agent=browser_ua or None)
         except AuthenticationError as exc:
             record_attempt(client_ip, success=False)
             record_attempt(user_key, success=False)

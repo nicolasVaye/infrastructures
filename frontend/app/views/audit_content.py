@@ -128,11 +128,6 @@ def content() -> None:
                         'width: 130px; font-family: monospace;'
                     ).classes('text-xs text-muted')
 
-    # Action handlers
-    def _on_filter(e) -> None:
-        state['action'] = e.value or ''
-        audit_table.refresh()
-
     async def _clear() -> None:
         confirmed = await confirm_dialog(
             t('audit.clear_confirm'),
@@ -151,13 +146,46 @@ def content() -> None:
         notify(t('audit.cleared').format(n=removed), type='warning')
         audit_table.refresh()
 
-    # Toolbar: action filter, refresh, clear
-    filter_options = {'': t('audit.filter.all')}
-    filter_options.update({a.value: _action_label(a.value) for a in AuditAction})
+    # Toolbar: action filter, refresh, clear.
+    # The filter mirrors the list's badges: each entry in the dropdown shows
+    # the same icon + colour as the corresponding row in the activity list
+    # (a plain ui.select cannot render rich items).
+    def _filter_meta(action: str) -> tuple[str, str, str]:
+        """(icon, badge class, label) for the filter button and its menu."""
+        if not action:
+            return ('filter_list', 'badge badge-default', t('audit.filter.all'))
+        icon, badge_cls = _ACTION_META.get(action, _DEFAULT_META)
+        return (icon, badge_cls, _action_label(action))
 
     with ui.row().classes('w-full items-center justify-between gap-2 mb-3 no-wrap'):
-        ui.select(options=filter_options, value='', on_change=_on_filter) \
-            .props('outlined dense').classes('flex-1').style('max-width: 260px;')
+        with ui.element('div').classes('flex-1').style('max-width: 280px;'):
+            filter_btn = ui.button(on_click=lambda: filter_menu.open()) \
+                .props('outline no-caps').classes('button button-secondary w-full justify-between')
+
+            def _render_filter_btn() -> None:
+                icon, badge_cls, label = _filter_meta(state['action'])
+                filter_btn.clear()
+                with filter_btn:
+                    with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
+                        ui.icon(icon, size='0.9rem')
+                        ui.label(label).classes('text-sm')
+                    ui.icon('arrow_drop_down').classes('ml-auto')
+            _render_filter_btn()
+
+            with ui.menu() as filter_menu:
+                for action_value in [''] + [a.value for a in AuditAction]:
+                    icon, badge_cls, label = _filter_meta(action_value)
+
+                    def _pick(a: str = action_value) -> None:
+                        state['action'] = a
+                        _render_filter_btn()
+                        audit_table.refresh()
+
+                    with ui.element('button').classes('audit-filter-item').on('click', _pick):
+                        with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
+                            ui.icon(icon, size='0.9rem')
+                            ui.label(label).classes('text-sm')
+
         with ui.row().classes('items-center gap-2'):
             ui.button(t('common.refresh'), icon='refresh', on_click=lambda: audit_table.refresh()) \
                 .props('flat no-caps').classes('button button-secondary')
