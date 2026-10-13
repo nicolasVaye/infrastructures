@@ -8,10 +8,22 @@ from services.i18n import t
 
 # Shared EChart base style
 
+from services.theme import chart_colors as _cc
+
 _GRID    = {'left': '3%', 'right': '3%', 'bottom': '3%', 'top': '12%', 'containLabel': True}
-_TT_AXIS = {'trigger': 'axis', 'backgroundColor': '#fff', 'borderColor': '#e4e4e7', 'textStyle': {'color': '#09090b', 'fontSize': 12}}
-_TT_ITEM = {'trigger': 'item', 'backgroundColor': '#fff', 'borderColor': '#e4e4e7', 'textStyle': {'color': '#09090b', 'fontSize': 12}}
-_LEGEND  = {'textStyle': {'color': '#71717a', 'fontSize': 12}}
+
+def _TT_AXIS():
+    c = _cc()
+    return {'trigger': 'axis', 'backgroundColor': c['tt_bg'], 'borderColor': c['tt_border'],
+            'textStyle': {'color': c['tt_fg'], 'fontSize': 12}}
+
+def _TT_ITEM():
+    c = _cc()
+    return {'trigger': 'item', 'backgroundColor': c['tt_bg'], 'borderColor': c['tt_border'],
+            'textStyle': {'color': c['tt_fg'], 'fontSize': 12}}
+
+def _LEGEND():
+    return {'textStyle': {'color': _cc()['label'], 'fontSize': 12}}
 
 
 # KPI helpers
@@ -38,30 +50,30 @@ def _kpi_card(container, label: str, icon: str, key: str, kpis: dict) -> dict:
 
 def _revenue_chart(rev: dict):
     return ui.echart({
-        'tooltip': {**_TT_AXIS, 'axisPointer': {'type': 'cross', 'label': {'backgroundColor': '#18181b'}}},
-        'legend': {**_LEGEND, 'data': [t('dashboard.series.revenue'), t('dashboard.series.forecast')], 'left': 'center', 'top': 0},
+        'tooltip': {**_TT_AXIS(), 'axisPointer': {'type': 'cross', 'label': {'backgroundColor': '#18181b'}}},
+        'legend': {**_LEGEND(), 'data': [t('dashboard.series.revenue'), t('dashboard.series.forecast')], 'left': 'center', 'top': 0},
         'grid': {'left': '3%', 'right': '3%', 'bottom': '3%', 'top': '14%', 'containLabel': True},
         'xAxis': {'type': 'category', 'boundaryGap': False, 'data': rev['days'],
-                  'axisLine': {'lineStyle': {'color': '#e4e4e7'}},
+                  'axisLine': {'lineStyle': {'color': _cc()['axis']}},
                   'axisTick': {'show': False},
-                  'axisLabel': {'color': '#71717a', 'fontSize': 11}},
+                  'axisLabel': {'color': _cc()['label'], 'fontSize': 11}},
         'yAxis': {'type': 'value',
-                  'splitLine': {'lineStyle': {'color': '#f4f4f5', 'type': 'dashed'}},
-                  'axisLabel': {':formatter': 'v => "€" + v.toLocaleString()', 'color': '#71717a', 'fontSize': 11}},
+                  'splitLine': {'lineStyle': {'color': _cc()['split'], 'type': 'dashed'}},
+                  'axisLabel': {':formatter': 'v => "€" + v.toLocaleString()', 'color': _cc()['label'], 'fontSize': 11}},
         'series': [
             {
                 'name': t('dashboard.series.revenue'), 'type': 'line', 'smooth': 0.3,
                 'data': rev['revenue'],
                 'symbol': 'circle', 'symbolSize': 6,
                 'lineStyle': {'width': 2.5, 'color': '#64748b'},
-                'itemStyle': {'color': '#64748b', 'borderWidth': 2, 'borderColor': '#fff'},
+                'itemStyle': {'color': '#64748b', 'borderWidth': 2, 'borderColor': _cc()['symbol']},
                 'emphasis': {'focus': 'series'},
             },
             {
                 'name': t('dashboard.series.forecast'), 'type': 'line', 'smooth': 0.3,
                 'data': rev['forecast'], 'symbol': 'diamond', 'symbolSize': 7,
                 'lineStyle': {'width': 2.5, 'type': 'dashed', 'color': '#60a5fa'},
-                'itemStyle': {'color': '#60a5fa', 'borderWidth': 2, 'borderColor': '#fff'},
+                'itemStyle': {'color': '#60a5fa', 'borderWidth': 2, 'borderColor': _cc()['symbol']},
                 'emphasis': {'focus': 'series'},
             },
         ],
@@ -70,15 +82,15 @@ def _revenue_chart(rev: dict):
 
 def _donut_chart(status: list):
     return ui.echart({
-        'tooltip': _TT_ITEM,
-        'legend': {**_LEGEND, 'orient': 'horizontal', 'bottom': 0, 'left': 'center',
+        'tooltip': _TT_ITEM(),
+        'legend': {**_LEGEND(), 'orient': 'horizontal', 'bottom': 0, 'left': 'center',
                    'itemWidth': 10, 'itemHeight': 10, 'itemGap': 12},
         'color': ['#4ade80', '#fbbf24', '#60a5fa', '#f87171'],
         'series': [{
             'type': 'pie', 'radius': ['44%', '68%'], 'center': ['50%', '44%'],
             'avoidLabelOverlap': False,
             'label': {'show': False},
-            'emphasis': {'label': {'show': True, 'fontSize': 13, 'fontWeight': 'bold', 'color': '#09090b'}},
+            'emphasis': {'label': {'show': True, 'fontSize': 13, 'fontWeight': 'bold', 'color': _cc()['emph']}},
             'labelLine': {'show': False},
             'data': status,
         }],
@@ -87,14 +99,14 @@ def _donut_chart(status: list):
 
 def _bar_chart(orders: dict):
     return ui.echart({
-        'tooltip': _TT_AXIS,
-        'legend': {**_LEGEND, 'data': [t('dashboard.series.completed'), t('dashboard.series.returned')], 'left': 'center', 'top': 0},
+        'tooltip': _TT_AXIS(),
+        'legend': {**_LEGEND(), 'data': [t('dashboard.series.completed'), t('dashboard.series.returned')], 'left': 'center', 'top': 0},
         'grid': _GRID,
         'xAxis': {'type': 'category', 'data': orders['days'],
-                  'axisLine': {'lineStyle': {'color': '#e4e4e7'}},
-                  'axisLabel': {'color': '#71717a', 'fontSize': 11}},
-        'yAxis': {'type': 'value', 'splitLine': {'lineStyle': {'color': '#f4f4f5'}},
-                  'axisLabel': {'color': '#71717a', 'fontSize': 11}},
+                  'axisLine': {'lineStyle': {'color': _cc()['axis']}},
+                  'axisLabel': {'color': _cc()['label'], 'fontSize': 11}},
+        'yAxis': {'type': 'value', 'splitLine': {'lineStyle': {'color': _cc()['split']}},
+                  'axisLabel': {'color': _cc()['label'], 'fontSize': 11}},
         'series': [
             {'name': t('dashboard.series.completed'), 'type': 'bar', 'data': orders['completed'],
              'barMaxWidth': 32, 'itemStyle': {'color': '#38bdf8', 'borderRadius': [4, 4, 0, 0]}},
@@ -106,15 +118,15 @@ def _bar_chart(orders: dict):
 
 def _area_chart(tp: dict):
     return ui.echart({
-        'tooltip': {**_TT_AXIS, 'axisPointer': {'type': 'cross', 'label': {'backgroundColor': '#4ade80'}}},
-        'legend': {**_LEGEND, 'data': [t('dashboard.series.actual'), t('dashboard.series.target')], 'left': 'center', 'top': 0},
+        'tooltip': {**_TT_AXIS(), 'axisPointer': {'type': 'cross', 'label': {'backgroundColor': '#4ade80'}}},
+        'legend': {**_LEGEND(), 'data': [t('dashboard.series.actual'), t('dashboard.series.target')], 'left': 'center', 'top': 0},
         'grid': _GRID,
         'xAxis': {'type': 'category', 'boundaryGap': False, 'data': tp['hours'],
-                  'axisLabel': {'color': '#71717a', 'fontSize': 10, 'interval': 2},
-                  'axisLine': {'lineStyle': {'color': '#e4e4e7'}}},
+                  'axisLabel': {'color': _cc()['label'], 'fontSize': 10, 'interval': 2},
+                  'axisLine': {'lineStyle': {'color': _cc()['axis']}}},
         'yAxis': {'type': 'value', 'min': 50, 'max': 100,
-                  'splitLine': {'lineStyle': {'color': '#f4f4f5'}},
-                  'axisLabel': {':formatter': 'v => v + "%"', 'color': '#71717a', 'fontSize': 11}},
+                  'splitLine': {'lineStyle': {'color': _cc()['split']}},
+                  'axisLabel': {':formatter': 'v => v + "%"', 'color': _cc()['label'], 'fontSize': 11}},
         'series': [
             {'name': t('dashboard.series.actual'), 'type': 'line', 'smooth': True,
              'data': tp['actual'], 'symbol': 'none',

@@ -509,7 +509,7 @@ body { font-size: var(--app-font-size) !important; }
 .account-dropdown {
   font-family: 'Roboto', sans-serif;
   min-width: 200px;
-  background: #ffffff;
+  background: var(--bg);
   border-radius: 12px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
   padding: 24px 0 16px 0;
@@ -971,7 +971,7 @@ q-menu {
 
 /* Stepper */
 .stepper .q-stepper__step-inner { padding: 4px 16px 16px 60px !important; }
-.stepper .q-stepper__title { font-size: var(--text-sm) !important; font-weight: var(--font-medium) !important; color: var(--fg) !important; background: #ffffff; }
+.stepper .q-stepper__title { font-size: var(--text-sm) !important; font-weight: var(--font-medium) !important; color: var(--fg) !important; background: var(--bg); }
 .stepper .q-stepper__caption { font-size: var(--text-xs) !important; color: var(--muted-fg) !important; }
 .stepper .q-stepper__dot { background: var(--primary) !important; }
 .stepper .q-stepper__tab--active .q-stepper__dot { background: var(--primary) !important; }
@@ -1430,40 +1430,53 @@ button.audit-filter-item:hover {
    custom design tokens are overridden: every component built on these
    variables (cards, badges, fields, sidebar, header) flips with them. */
 body.body--dark {
-  --bg:           #09090b;
+  --bg:           #101013;
   --fg:           #fafafa;
 
   --primary:      #e4e4e7;
   --primary-fg:   #18181b;
 
-  --secondary:    #27272a;
+  --secondary:    #1d1d22;
   --secondary-fg: #d4d4d8;
 
-  --muted:        #27272a;
+  --muted:        #222227;
   --muted-fg:     #a1a1aa;
 
-  --faint:        #18181b;
-  --faint-fg:     #71717a;
+  --faint:        #16161a;
+  --faint-fg:     #8b8b93;
 
   --accent:       #3f3f46;
   --accent-fg:    #e4e4e7;
 
-  --success-light:#0f2412;
+  --success-light:#12241a;
   --warning-light:#2a1d04;
   --danger-light: #2a0f0f;
   --info-light:   #0c1a2e;
 
-  --border:       #3f3f46;
-  --input-border: #52525b;
+  --border:       #2e2e34;
+  --input-border: #4a4a52;
   --ring:         #e4e4e7;
 
-  --panel-bg:     #18181b;
+  --panel-bg:     #131317;
 }
 
 /* Text and surfaces that hardcode black/white via helper classes */
 body.body--dark .text-black { color: var(--fg) !important; }
-body.body--dark .bg-white,
 body.body--dark .text-white { color: var(--fg); }
+body.body--dark .bg-white    { background: var(--bg) !important; }
+body.body--dark .bg-grey-1,
+body.body--dark .bg-grey-2  { background: var(--secondary) !important; }
+
+/* Dropdowns / menus hardcode a white panel: flip them with the tokens */
+body.body--dark .account-dropdown {
+  background: var(--bg) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+}
+body.body--dark .q-menu { background: var(--bg) !important; }
+body.body--dark .stepper .q-stepper__title { background: var(--bg) !important; }
+body.body--dark .q-table { background: transparent; }
 
 /* The GitHub mark is a black SVG: invert it so it stays visible */
 body.body--dark img[src*="GitHub"] { filter: invert(1); }

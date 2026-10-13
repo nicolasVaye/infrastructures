@@ -293,13 +293,19 @@ def content() -> None:
                     .props('outlined dense').classes('w-full').style('max-width: 320px;')
 
             def _on_theme(e) -> None:
+                from services import theme as theme_service
                 theme = e.value
-                ui.dark_mode(theme == 'dark')
+                # Apply immediately (Quasar dark mode + color palette)…
                 app.storage.user['theme'] = theme
+                theme_service.apply(theme)
+                # …persist on the account…
                 with get_session() as session:
                     UserService(session).set_theme(user_id, theme)
                 audit_record(AuditAction.THEME_CHANGED, details=theme)
                 notify(t('settings.theme_saved'), type='positive')
+                # …then reload: charts bake their colors in at render time,
+                # a fresh page is the only way to rebuild them correctly.
+                ui.run_javascript('setTimeout(() => window.location.reload(), 600)')
 
             with ui.element('div').classes('w-full mt-4'):
                 i18n.bind(ui.label(t('settings.theme')).classes('field-label'), 'settings.theme')

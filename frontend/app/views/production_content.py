@@ -19,10 +19,20 @@ _THROUGHPUT = {
     'line_e': [60, 72, 75, 68, 78, 74, 71, 65],
 }
 
-_TT = {'backgroundColor': '#fff', 'borderColor': '#e4e4e7', 'textStyle': {'color': '#09090b', 'fontSize': 12}}
-_AX = {'axisLine': {'lineStyle': {'color': '#e4e4e7'}}, 'axisTick': {'show': False},
-       'axisLabel': {'color': '#71717a', 'fontSize': 11}}
-_SL = {'splitLine': {'lineStyle': {'color': '#f4f4f5', 'type': 'dashed'}}}
+from services.theme import chart_colors as _cc
+
+def _TT():
+    c = _cc()
+    return {'backgroundColor': c['tt_bg'], 'borderColor': c['tt_border'],
+            'textStyle': {'color': c['tt_fg'], 'fontSize': 12}}
+
+def _AX():
+    c = _cc()
+    return {'axisLine': {'lineStyle': {'color': c['axis']}}, 'axisTick': {'show': False},
+            'axisLabel': {'color': c['label'], 'fontSize': 11}}
+
+def _SL():
+    return {'splitLine': {'lineStyle': {'color': _cc()['split'], 'type': 'dashed'}}}
 
 _STATUS_KEY = {'Running': 'status.running', 'Paused': 'status.paused', 'Error': 'status.error'}
 _SHIFT_KEY = {'Morning': 'production.shift.morning', 'Afternoon': 'production.shift.afternoon', 'Night': 'production.shift.night'}
@@ -85,7 +95,7 @@ def content(searchFilter=None) -> None:
                         with ui.element('td'): ui.label(t(_SHIFT_KEY[line['shift']]))
                         with ui.element('td').style('min-width:160px'):
                             ui.element('div').style(
-                                f'height:6px;border-radius:9999px;background:#f4f4f5;overflow:hidden'
+                                f'height:6px;border-radius:9999px;background:var(--secondary);overflow:hidden'
                             ).add_slot('default',
                                 f'<div style="width:{pct}%;height:100%;background:{bar_color};border-radius:9999px;transition:width .4s"></div>'
                             )
@@ -102,15 +112,15 @@ def content(searchFilter=None) -> None:
                 ui.label(t('production.throughput_today')).classes('card-title')
                 ui.label(t('production.units_per_hour')).classes('text-xs text-muted mt-1')
         ui.echart({
-            'tooltip': {'trigger': 'axis', **_TT,
+            'tooltip': {'trigger': 'axis', **_TT(),
                         'axisPointer': {'type': 'cross', 'label': {'backgroundColor': '#60a5fa'}}},
             'legend': {'data': ['Line A', 'Line C', 'Line E'], 'top': 0,
-                       'textStyle': {'color': '#71717a', 'fontSize': 12},
+                       'textStyle': {'color': _cc()['label'], 'fontSize': 12},
                        'itemWidth': 10, 'itemHeight': 10, 'itemGap': 16},
             'grid': {'left': '2%', 'right': '2%', 'bottom': '2%', 'top': '14%', 'containLabel': True},
             'xAxis': {'type': 'category', 'data': _THROUGHPUT['hours'], 'boundaryGap': False, **_AX},
-            'yAxis': {**_AX, **_SL, 'type': 'value', 'name': 'units / h',
-                      'axisLabel': {'color': '#71717a', 'fontSize': 11}},
+            'yAxis': {**_AX(), **_SL, 'type': 'value', 'name': 'units / h',
+                      'axisLabel': {'color': _cc()['label'], 'fontSize': 11}},
             'series': [
                 {'name': 'Line A', 'type': 'line', 'smooth': True,
                  'data': _THROUGHPUT['line_a'], 'symbol': 'circle', 'symbolSize': 5,

@@ -190,19 +190,14 @@ window.addEventListener('storage', function (e) {
 def with_base_layout(route_handler):
     @wraps(route_handler)
     def wrapper(*args, **kwargs):
-        if app.storage.user.get('theme') == 'dark':
-            ui.colors(primary='#e4e4e7', secondary='#3f3f46', positive='#4caf50', negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#18181b')
-        else:
-            ui.colors(primary='#18181b', secondary='#f4f4f5', positive='#4caf50', negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#e4e4e7')
+        from services import theme as theme_service
+        theme_service.apply(theme_service.current())
         _add_global_css(shared=True)
         ui.add_head_html('<link rel="stylesheet" href="/assets/css/icons.css">', shared=True)
         ui.add_head_html(_LOGOUT_WATCHER_JS, shared=True)
 
         # Preload avoids a layout-shift flash when the sidebar logo first renders
         ui.add_head_html('<link rel="preload" href="/assets/images/logo.png" as="image">')
-
-        # Per-user theme, persisted on the account (default light).
-        ui.dark_mode(app.storage.user.get('theme') == 'dark')
 
         if 'sidebar-collapsed' not in app.storage.user:
             app.storage.user['sidebar-collapsed'] = False

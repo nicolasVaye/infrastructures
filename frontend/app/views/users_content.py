@@ -17,6 +17,7 @@ from models.audit import AuditAction
 from models.enums import UserRole
 from services.audit_service import record as audit_record
 from services.i18n import t
+from services.user_service import DEFAULT_USER_PASSWORD, UserService
 
 
 # The bootstrap admin is protected: it can never be deleted or disabled.

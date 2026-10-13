@@ -37,10 +37,20 @@ _STATUS_KEY = {
     'On Hold':    'status.on_hold',
 }
 
-_TT  = {'backgroundColor': '#fff', 'borderColor': '#e4e4e7', 'textStyle': {'color': '#09090b', 'fontSize': 12}}
-_AX  = {'axisLine': {'lineStyle': {'color': '#e4e4e7'}}, 'axisTick': {'show': False},
-        'axisLabel': {'color': '#71717a', 'fontSize': 11}}
-_SL  = {'splitLine': {'lineStyle': {'color': '#f4f4f5', 'type': 'dashed'}}}
+from services.theme import chart_colors as _cc
+
+def _TT():
+    c = _cc()
+    return {'backgroundColor': c['tt_bg'], 'borderColor': c['tt_border'],
+            'textStyle': {'color': c['tt_fg'], 'fontSize': 12}}
+
+def _AX():
+    c = _cc()
+    return {'axisLine': {'lineStyle': {'color': c['axis']}}, 'axisTick': {'show': False},
+            'axisLabel': {'color': c['label'], 'fontSize': 11}}
+
+def _SL():
+    return {'splitLine': {'lineStyle': {'color': _cc()['split'], 'type': 'dashed'}}}
 
 
 def content(searchFilter=None) -> None:
@@ -78,15 +88,15 @@ def content(searchFilter=None) -> None:
         with ui.element('div').classes('card').style('flex:1;min-width:280px'):
             ui.label(t('orders.status_breakdown')).classes('card-title mb-1')
             ui.echart({
-                'tooltip': {'trigger': 'item', **_TT},
+                'tooltip': {'trigger': 'item', **_TT()},
                 'legend':  {'bottom': 0, 'left': 'center',
-                            'textStyle': {'color': '#71717a', 'fontSize': 12},
+                            'textStyle': {'color': _cc()['label'], 'fontSize': 12},
                             'itemWidth': 10, 'itemHeight': 10, 'itemGap': 12},
                 'series': [{
                     'type': 'pie', 'radius': ['46%', '70%'], 'center': ['50%', '44%'],
                     'avoidLabelOverlap': False,
                     'label': {'show': False},
-                    'emphasis': {'label': {'show': True, 'fontSize': 13, 'fontWeight': 'bold', 'color': '#09090b'}},
+                    'emphasis': {'label': {'show': True, 'fontSize': 13, 'fontWeight': 'bold', 'color': _cc()['emph']}},
                     'labelLine': {'show': False},
                     'data': [
                         {'name': t(_STATUS_KEY[k]), 'value': v, 'itemStyle': {'color': _STATUS_STYLE[k][1]}}
@@ -99,17 +109,17 @@ def content(searchFilter=None) -> None:
         with ui.element('div').classes('card').style('flex:2;min-width:360px'):
             ui.label(t('orders.orders_revenue')).classes('card-title mb-1')
             ui.echart({
-                'tooltip': {'trigger': 'axis', **_TT, 'axisPointer': {'type': 'cross'}},
+                'tooltip': {'trigger': 'axis', **_TT(), 'axisPointer': {'type': 'cross'}},
                 'legend': {'data': [t('orders.legend.orders'), t('orders.legend.revenue')], 'top': 0,
-                           'textStyle': {'color': '#71717a', 'fontSize': 12}},
+                           'textStyle': {'color': _cc()['label'], 'fontSize': 12}},
                 'grid': {'left': '3%', 'right': '4%', 'bottom': '3%', 'top': '14%', 'containLabel': True},
-                'xAxis': {'type': 'category', 'data': _DAILY['days'], **_AX},
+                'xAxis': {'type': 'category', 'data': _DAILY['days'], **_AX()},
                 'yAxis': [
-                    {**_AX, **_SL, 'type': 'value', 'name': t('orders.legend.orders'),
-                     'axisLabel': {'color': '#71717a', 'fontSize': 11}},
-                    {**_AX, **_SL, 'type': 'value', 'name': t('orders.legend.revenue') + ' (€)',
+                    {**_AX(), **_SL(), 'type': 'value', 'name': t('orders.legend.orders'),
+                     'axisLabel': {'color': _cc()['label'], 'fontSize': 11}},
+                    {**_AX(), **_SL(), 'type': 'value', 'name': t('orders.legend.revenue') + ' (€)',
                      'splitLine': {'show': False},
-                     'axisLabel': {':formatter': 'v => "€" + v', 'color': '#71717a', 'fontSize': 11}},
+                     'axisLabel': {':formatter': 'v => "€" + v', 'color': _cc()['label'], 'fontSize': 11}},
                 ],
                 'series': [
                     {'name': t('orders.legend.orders'), 'type': 'bar', 'yAxisIndex': 0,
@@ -118,7 +128,7 @@ def content(searchFilter=None) -> None:
                     {'name': t('orders.legend.revenue'), 'type': 'line', 'smooth': True, 'yAxisIndex': 1,
                      'data': _DAILY['revenue'], 'symbol': 'circle', 'symbolSize': 6,
                      'lineStyle': {'width': 2.5, 'color': '#4ade80'},
-                     'itemStyle': {'color': '#4ade80', 'borderWidth': 2, 'borderColor': '#fff'}},
+                     'itemStyle': {'color': '#4ade80', 'borderWidth': 2, 'borderColor': _cc()['symbol']}},
                 ],
             }).classes('w-full').style('height:280px')
 

@@ -95,12 +95,10 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
         ui.navigate.to('/change-password' if user['must_change_password'] else redirect_to)
 
     # Styling
-    ui.colors(primary='#18181b', secondary='#f4f4f5', positive='#4caf50',
-              negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#e4e4e7')
+    from services import theme as theme_service
+    theme_service.apply(theme_service.current())
 
     ui.add_head_html(f'<style>{_CSS}</style>')
-    # Per-user theme (set at the last successful login) also tints /login.
-    ui.dark_mode(app.storage.user.get('theme') == 'dark')
     ui.add_head_html('<link rel="stylesheet" href="/assets/css/icons.css">')
     ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
 
