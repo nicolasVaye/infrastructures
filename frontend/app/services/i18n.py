@@ -175,6 +175,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'audit.col.details':  {'en': 'Details', 'de': 'Details'},
     'audit.col.ip':       {'en': 'IP', 'de': 'IP'},
     'audit.filter.all':   {'en': 'All actions', 'de': 'Alle Aktionen'},
+    'audit.filter.selected': {'en': '{n} action(s) selected', 'de': '{n} Aktion(en) ausgewählt'},
     'audit.clear':        {'en': 'Clear log', 'de': 'Protokoll leeren'},
     'audit.clear_title':  {'en': 'Clear audit log', 'de': 'Audit-Protokoll leeren'},
     'audit.clear_confirm':{'en': 'This permanently deletes all audit entries. Continue?', 'de': 'Dadurch werden alle Audit-Einträge dauerhaft gelöscht. Fortfahren?'},

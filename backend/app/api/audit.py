@@ -19,9 +19,11 @@ async def list_audit(
     offset: int = Query(default=0, ge=0),
     username: str | None = None,
     action: str | None = None,
+    actions: str | None = None,
 ) -> list[AuditOut]:
     records = await audit_list(
-        session, limit=limit, offset=offset, username=username, action=action
+        session, limit=limit, offset=offset, username=username, action=action,
+        actions=[a.strip() for a in actions.split(",") if a.strip()] if actions else None,
     )
     return [AuditOut.model_validate(a) for a in records]
 
@@ -32,13 +34,17 @@ async def count_audit(
     session: DbSession,
     username: str | None = None,
     action: str | None = None,
+    actions: str | None = None,
 ) -> dict:
     from sqlalchemy import func, select
     from app.core.db import AuditLogRecord
     stmt = select(func.count()).select_from(AuditLogRecord)
     if username:
         stmt = stmt.where(AuditLogRecord.username == username)
-    if action:
+    if actions:
+        stmt = stmt.where(AuditLogRecord.action.in_(
+            [a.strip() for a in actions.split(",") if a.strip()]))
+    elif action:
         stmt = stmt.where(AuditLogRecord.action == action)
     return {"count": await session.scalar(stmt) or 0}
 

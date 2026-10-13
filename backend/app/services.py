@@ -36,11 +36,15 @@ async def record(
 async def audit_list(
     session: AsyncSession, *, limit: int = 100, offset: int = 0,
     username: str | None = None, action: str | None = None,
+    actions: list[str] | None = None,
 ) -> list[AuditLogRecord]:
     query = select(AuditLogRecord).order_by(AuditLogRecord.id.desc())
     if username:
         query = query.where(AuditLogRecord.username == username)
-    if action:
+    if actions:
+        # Multi-select filter: match any of the given actions.
+        query = query.where(AuditLogRecord.action.in_(actions))
+    elif action:
         query = query.where(AuditLogRecord.action == action)
     return list((await session.scalars(query.limit(limit).offset(offset))).all())
 

@@ -17,7 +17,9 @@ from views._common import page_header, safe_auto_refresh
 # Column styling (badge class, text class, icon, accent color)
 _COL_STYLE = {
     'queued':    ('badge-default',  'text-muted',    'schedule',           '#71717a'),
-    'running':   ('badge-info',     'text-info',     'progress_activity',  '#60a5fa'),
+    # 'autorenew' rather than 'progress_activity': the latter is a recent
+    # Material Symbols name missing from the Material Icons font NiceGUI loads.
+    'running':   ('badge-info',     'text-info',     'autorenew',          '#60a5fa'),
     'succeeded': ('badge-success',  'text-positive', 'check_circle',       '#4ade80'),
     'failed':    ('badge-negative', 'text-negative', 'error',              '#f87171'),
     'cancelled': ('badge-warning',  'text-warning',  'cancel',             '#fbbf24'),

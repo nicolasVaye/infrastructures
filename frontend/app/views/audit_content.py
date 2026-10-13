@@ -63,8 +63,9 @@ def content() -> None:
             ui.label(t('audit.admin_only')).classes('text-muted')
         return
 
-    # Filter state: '' means all actions.
-    state = {'action': ''}
+    # Filter state: set of selected action values (multi-select).
+    # An empty set means "all actions".
+    state = {'actions': set()}
 
     @ui.refreshable
     def audit_table() -> None:
@@ -80,7 +81,8 @@ def content() -> None:
                     'details': e.details,
                     'ip': e.ip,
                 }
-                for e in service.get_recent(limit=_LIMIT, action=state['action'] or None)
+                for e in service.get_recent(limit=_LIMIT,
+                                           actions=sorted(state['actions']) or None)
             ]
 
         ui.label(t('audit.showing').format(shown=len(entries), total=total)) \
@@ -147,9 +149,10 @@ def content() -> None:
         audit_table.refresh()
 
     # Toolbar: action filter, refresh, clear.
-    # The filter mirrors the list's badges: each entry in the dropdown shows
-    # the same icon + colour as the corresponding row in the activity list
-    # (a plain ui.select cannot render rich items).
+    # Multi-select dropdown: each entry shows the same icon + colour as the
+    # corresponding badge in the activity list, with a checkbox to build the
+    # selection. The menu stays open so several actions can be ticked; the
+    # table refreshes live on every change.
     def _filter_meta(action: str) -> tuple[str, str, str]:
         """(icon, badge class, label) for the filter button and its menu."""
         if not action:
@@ -163,28 +166,68 @@ def content() -> None:
                 .props('outline no-caps').classes('button button-secondary w-full justify-between')
 
             def _render_filter_btn() -> None:
-                icon, badge_cls, label = _filter_meta(state['action'])
+                selected = state['actions']
                 filter_btn.clear()
                 with filter_btn:
-                    with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
-                        ui.icon(icon, size='0.9rem')
-                        ui.label(label).classes('text-sm')
+                    with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                        ui.icon('filter_list', size='0.9rem')
+                        if not selected:
+                            ui.label(t('audit.filter.all')).classes('text-sm')
+                        else:
+                            ui.label(t('audit.filter.selected').format(n=len(selected))) \
+                                .classes('text-sm')
                     ui.icon('arrow_drop_down').classes('ml-auto')
             _render_filter_btn()
 
             with ui.menu() as filter_menu:
-                for action_value in [''] + [a.value for a in AuditAction]:
-                    icon, badge_cls, label = _filter_meta(action_value)
+                filter_menu.props('no-route-dismiss')
 
-                    def _pick(a: str = action_value) -> None:
-                        state['action'] = a
-                        _render_filter_btn()
-                        audit_table.refresh()
+                @ui.refreshable
+                def _filter_items() -> None:
+                    """Menu body: rebuilt on every toggle so the checkboxes
+                    (and the highlight of the current selection) stay in
+                    sync with state['actions']."""
+                    # lambda so _select_all (defined below) resolves at click
+                    with ui.element('button').classes('audit-filter-item').on(
+                        'click', lambda: _select_all()
+                    ):
+                        with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                            ui.icon('clear_all', size='0.9rem')
+                            ui.label(t('audit.filter.all')).classes('text-sm')
+                        ui.icon('check_box_outline_blank' if state['actions']
+                                else 'check_box', size='0.9rem').classes('ml-auto text-muted')
 
-                    with ui.element('button').classes('audit-filter-item').on('click', _pick):
-                        with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
-                            ui.icon(icon, size='0.9rem')
-                            ui.label(label).classes('text-sm')
+                    ui.separator().classes('my-1')
+
+                    for a in AuditAction:
+                        action_value = a.value
+                        icon, badge_cls, label = _filter_meta(action_value)
+
+                        def _toggle(av: str = action_value) -> None:
+                            if av in state['actions']:
+                                state['actions'].discard(av)
+                            else:
+                                state['actions'].add(av)
+                            _render_filter_btn()
+                            _filter_items.refresh()
+                            audit_table.refresh()
+
+                        with ui.element('button').classes('audit-filter-item').on('click', _toggle):
+                            with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
+                                ui.icon(icon, size='0.9rem')
+                                ui.label(label).classes('text-sm')
+                            with ui.element('span').classes('ml-auto'):
+                                ui.icon('check_box' if action_value in state['actions']
+                                        else 'check_box_outline_blank', size='0.9rem') \
+                                    .classes('text-muted')
+                _filter_items()
+
+                def _select_all() -> None:
+                    """Reset the selection to 'all actions'."""
+                    state['actions'].clear()
+                    _render_filter_btn()
+                    _filter_items.refresh()
+                    audit_table.refresh()
 
         with ui.row().classes('items-center gap-2'):
             ui.button(t('common.refresh'), icon='refresh', on_click=lambda: audit_table.refresh()) \

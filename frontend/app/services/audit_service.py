@@ -31,9 +31,13 @@ class AuditService:
         """Deprecated: the backend records audit entries server-side."""
         logger.debug('AuditService.log() is a no-op: auditing moved to the backend.')
 
-    def get_recent(self, *, limit: int = 100, action: str | None = None) -> list[AuditEntry]:
+    def get_recent(self, *, limit: int = 100, action: str | None = None,
+                   actions: list[str] | None = None) -> list[AuditEntry]:
         params: dict = {'limit': limit}
-        if action:
+        if actions:
+            # Multi-select filter: comma-separated values (see GET /audit).
+            params['actions'] = ','.join(actions)
+        elif action:
             params['action'] = action
         entries = self.session.get('/audit', params=params)
         return [
