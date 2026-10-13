@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select, text
@@ -167,7 +167,7 @@ async def scheduler_tick() -> None:
     `croniter`-style next-fire computation is replaced by a coarse check.
     For production use APScheduler's CronTrigger per schedule.
     """
-    import croniter
+    from croniter import croniter as _Croniter
     async with get_session_factory()() as session:
         schedules = (await session.scalars(
             select(ScheduleRecord).where(ScheduleRecord.enabled.is_(True))
@@ -175,8 +175,8 @@ async def scheduler_tick() -> None:
         for schedule in schedules:
             now = utcnow()
             base = schedule.last_run_at or (now - timedelta(days=1))
-            iterator = croniter(schedule.cron, base)
-            next_fire = iterator.get_next(croniter.datetime)
+            iterator = _Croniter(schedule.cron, base)
+            next_fire = iterator.get_next(datetime)
             if schedule.last_run_at is None or next_fire <= now:
                 session.add(JobRecord(
                     job_type=schedule.job_type,

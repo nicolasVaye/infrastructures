@@ -179,5 +179,13 @@ def verify_state(state: str, idp_id: int) -> None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC state does not match this provider")
 
 
-def redirect_uri() -> str:
-    return get_settings().oidc_redirect_base_url.rstrip("/") + "/auth/oidc/callback"
+def redirect_uri(idp_id: int) -> str:
+    """The exact redirect_uri sent to the provider for this IdP.
+
+    It embeds the provider id (?idp=1): the frontend callback page is public
+    and cannot decode the signed state (it would need the JWT secret), so
+    the id rides in the URL instead. Must be registered verbatim as a Valid
+    redirect URI on the Keycloak client.
+    """
+    base = get_settings().oidc_redirect_base_url.rstrip("/")
+    return f"{base}/auth/oidc/callback?idp={idp_id}"

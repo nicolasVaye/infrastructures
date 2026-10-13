@@ -122,7 +122,7 @@ async def oidc_authorize(idp_id: int, session: DbSession) -> OIDCAuthorizeOut:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Identity provider not found or disabled")
     document = await oidc.discover(idp.issuer_url)
     state = oidc.sign_state(idp.id)
-    url = oidc.build_authorize_url(document, idp.client_id, oidc.redirect_uri(), state)
+    url = oidc.build_authorize_url(document, idp.client_id, oidc.redirect_uri(idp.id), state)
     return OIDCAuthorizeOut(authorize_url=url, state=state)
 
 
@@ -144,7 +144,7 @@ async def oidc_callback(idp_id: int, body: OIDCCallbackIn, request: Request,
     document = await oidc.discover(idp.issuer_url)
     tokens = await oidc.exchange_code(
         document, code=body.code, client_id=idp.client_id,
-        client_secret=idp.client_secret, redirect_uri=oidc.redirect_uri(),
+        client_secret=idp.client_secret, redirect_uri=oidc.redirect_uri(idp.id),
     )
     id_token = tokens.get("id_token")
     if not id_token:
