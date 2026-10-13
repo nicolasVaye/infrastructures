@@ -348,6 +348,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'idps.tip.verify':    {'en': 'Verify connection', 'de': 'Verbindung prüfen'},
     'idps.tip.edit':      {'en': 'Edit provider', 'de': 'Anbieter bearbeiten'},
     'idps.tip.delete':    {'en': 'Delete provider', 'de': 'Anbieter löschen'},
+    'idps.verifying':     {'en': "Checking provider '{name}'…", 'de': "Anbieter '{name}' wird geprüft…"},
     'idps.toggle_msg':    {'en': "Provider '{name}' {state}", 'de': "Anbieter '{name}' {state}"},
     'idps.deleted_msg':   {'en': "Provider '{name}' removed.", 'de': "Anbieter '{name}' entfernt."},
     'idps.created_msg':   {'en': "Provider '{name}' created.", 'de': "Anbieter '{name}' erstellt."},

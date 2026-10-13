@@ -10,7 +10,7 @@ from __future__ import annotations
 from nicegui import app, ui
 
 from components.dialogs import confirm_dialog, info_dialog
-from components.notifications import notify
+from components.notifications import notify, notify_ongoing
 from core.database import get_session
 from models.enums import UserRole
 from services.i18n import t
@@ -86,13 +86,17 @@ def content() -> None:
                         idps_table.refresh()
 
                     async def _verify(item: dict = i) -> None:
+                        handle = await notify_ongoing(
+                            t('idps.verifying').format(name=item['name']))
                         try:
                             with get_session() as api:
                                 result = api.get(f"/idps/{item['id']}/verify")
                         except Exception as exc:
+                            handle.dismiss()
                             await info_dialog(str(getattr(exc, 'detail', exc)),
                                               title=t('idps.verify_fail'), danger=True)
                             return
+                        handle.dismiss()
                         await info_dialog(
                             t('idps.verify_ok').format(ep=result.get('token_endpoint')),
                             title=t('idps.reachable').format(name=item['name']))
@@ -185,14 +189,13 @@ def content() -> None:
                 idps_table.refresh()
 
             with ui.row().classes('w-full justify-end gap-2'):
-                ui.button(t('idps.cancel'), on_click=dialog.close).classes('button button-secondary')
-                ui.button(t('idps.save'), icon='save', on_click=_save).classes('button button-primary')
+                ui.button(t('common.cancel'), on_click=dialog.close).classes('button button-secondary')
+                ui.button(t('common.save'), on_click=_save).classes('button button-primary')
         dialog.open()
 
     # -- creation dialog (same pattern as the users tab) ----------------------
     def _open_create_dialog() -> None:
-        with ui.dialog() as dialog, ui.column().classes('login-card gap-3') \
-                .style('min-width: 520px; max-width: 640px;'):
+        with ui.dialog() as dialog, ui.column().classes('login-card gap-4'):
             ui.label(t('idps.add_title')).classes('section-title')
             ui.label(t('idps.add_desc')).classes('text-sm text-muted')
 
@@ -245,8 +248,8 @@ def content() -> None:
                 idps_table.refresh()
 
             with ui.row().classes('w-full justify-end gap-2'):
-                ui.button(t('idps.cancel'), on_click=dialog.close).classes('button button-secondary')
-                ui.button(t('idps.add'), icon='add', on_click=create).classes('button button-primary')
+                ui.button(t('common.cancel'), on_click=dialog.close).classes('button button-secondary')
+                ui.button(t('common.create'), on_click=create).classes('button button-primary')
         dialog.open()
 
     # Add-provider button above the table, like the users tab

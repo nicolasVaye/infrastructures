@@ -48,7 +48,7 @@ async def discover(issuer_url: str) -> dict:
     except httpx.HTTPError as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
-            f"Identity provider unreachable: {exc}",
+            f"Identity provider unreachable at {well_known}: {exc!r}",
         ) from exc
     if response.status_code != 200:
         raise HTTPException(
