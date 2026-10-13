@@ -66,6 +66,7 @@ def _users_tab(current_username: str) -> None:
                     'role': u.role.value,
                     'is_active': u.is_active,
                     'must_change_password': u.must_change_password,
+                    'auth_provider': u.auth_provider,
                 }
                 for u in UserService(session).get_all_users()
             ]
@@ -120,8 +121,14 @@ def _users_tab(current_username: str) -> None:
 
                     # Actions
                     with ui.row().classes('items-center gap-1').style('width: 180px;'):
-                        ui.button(icon='lock_reset', on_click=lambda _, uid=u['id']: _reset(uid)) \
+                        reset_btn = ui.button(icon='lock_reset',
+                                              on_click=lambda _, uid=u['id']: _reset(uid)) \
                             .props('flat dense round').tooltip(t('users.tip.reset'))
+                        # Federated accounts have no local password: the reset
+                        # button makes no sense for them.
+                        if u['auth_provider'] != 'local':
+                            reset_btn.disable()
+                            reset_btn.tooltip(t('users.tip.reset_federated'))
 
                         role_btn = ui.button(
                             icon='swap_horiz', on_click=lambda _, uid=u['id']: _change_role(uid)

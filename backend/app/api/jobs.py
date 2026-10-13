@@ -14,7 +14,8 @@ from app.core.security import AdminUser, CurrentUser, DbSession
 from app.events import notify_event
 from app.services import record
 from shared.enums import AuditAction, JobStatus
-from shared.models import JobCreate, JobOut, ScheduleCreate, ScheduleOut
+from shared.models import (JobCreate, JobOut, ScheduleCreate, ScheduleOut,
+                           ScheduleUpdate)
 
 router = APIRouter(tags=["jobs"])
 
@@ -100,6 +101,28 @@ async def create_schedule(body: ScheduleCreate, admin: AdminUser, session: DbSes
         job_type=body.job_type, params=body.params, cron=body.cron, enabled=body.enabled
     )
     session.add(schedule)
+    await session.flush()
+    return ScheduleOut.model_validate(schedule)
+
+
+@router.patch("/schedules/{schedule_id}", response_model=ScheduleOut)
+async def update_schedule(schedule_id: int, body: ScheduleUpdate,
+                          admin: AdminUser, session: DbSession) -> ScheduleOut:
+    """Update a schedule's cron expression, params or enabled flag."""
+    schedule = await session.get(ScheduleRecord, schedule_id)
+    if schedule is None:
+        raise HTTPException(404, "Schedule not found")
+    if body.cron is not None:
+        try:
+            from apscheduler.triggers.cron import CronTrigger
+            CronTrigger.from_crontab(body.cron)
+        except Exception as exc:
+            raise HTTPException(400, f"Invalid cron expression: {exc}") from exc
+        schedule.cron = body.cron
+    if body.params is not None:
+        schedule.params = body.params
+    if body.enabled is not None:
+        schedule.enabled = body.enabled
     await session.flush()
     return ScheduleOut.model_validate(schedule)
 

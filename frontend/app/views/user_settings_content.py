@@ -240,41 +240,59 @@ def content() -> None:
                 i18n.bind(ui.label(t('settings.security')).classes('card-title'), 'settings.security')
                 i18n.bind(ui.label(t('settings.security_desc')).classes('card-description'), 'settings.security_desc')
 
-            def _sync_button() -> None:
-                (update_btn.enable if form.is_valid() else update_btn.disable)()
+            # Federated account: no local password exists (nor should one be
+            # created) — the password is managed by the identity provider.
+            if app.storage.user.get('auth_provider', 'local') != 'local':
+                with ui.element('div').classes(
+                    'w-full p-2').style('background: var(--faint); border-radius: 6px;'):
+                    with ui.row().classes('items-center gap-2'):
+                        ui.icon('vpn_key', size='0.9rem').classes('text-muted')
+                        i18n.bind(ui.label(t('settings.federated_pw')).classes('text-sm'),
+                                  'settings.federated_pw')
+                    i18n.bind(ui.label(t('settings.federated_pw_desc')).classes(
+                        'text-xs text-muted mt-1'), 'settings.federated_pw_desc')
+                with ui.row().classes('w-full justify-end mt-2'):
+                    i18n.bind(ui.button(t('settings.change_pw_provider'), icon='open_in_new',
+                              on_click=lambda: ui.navigate.to('/login'))
+                              .props('no-caps outline').classes('button button-outline'),
+                              'settings.change_pw_provider')
 
-            async def _update_password() -> None:
-                if not form.is_valid():
-                    notify(t('settings.password_not_met'), type='warning')
-                    return
-                try:
-                    with get_session() as session:
-                        UserService(session).change_password(user_id, form.new_pw.value)
-                except ValueError as exc:
-                    notify(str(exc), type='negative')
-                    return
-                app.storage.user['must_change_password'] = False
-                form.reset()
-                update_btn.disable()
-                audit_record(AuditAction.PASSWORD_CHANGED)
-                notify(t('settings.password_updated'), type='positive')
+            else:
+                def _sync_button() -> None:
+                    (update_btn.enable if form.is_valid() else update_btn.disable)()
 
-            with ui.column().classes('w-full mt-2'):
-                form = PasswordChangeForm(
-                    new_label=t('settings.new_password'),
-                    confirm_label=t('settings.confirm_password'),
-                    on_change=_sync_button,
-                    on_submit=_update_password,
-                )
+                async def _update_password() -> None:
+                    if not form.is_valid():
+                        notify(t('settings.password_not_met'), type='warning')
+                        return
+                    try:
+                        with get_session() as session:
+                            UserService(session).change_password(user_id, form.new_pw.value)
+                    except ValueError as exc:
+                        notify(str(exc), type='negative')
+                        return
+                    app.storage.user['must_change_password'] = False
+                    form.reset()
+                    update_btn.disable()
+                    audit_record(AuditAction.PASSWORD_CHANGED)
+                    notify(t('settings.password_updated'), type='positive')
 
-            with ui.element('div').classes('card-footer justify-end'):
-                update_btn = i18n.bind(
-                    ui.button(t('settings.update_password'), icon='lock_reset',
-                              on_click=_update_password)
-                    .props('no-caps').classes('button button-primary'),
-                    'settings.update_password',
-                )
-                update_btn.disable()
+                with ui.column().classes('w-full mt-2'):
+                    form = PasswordChangeForm(
+                        new_label=t('settings.new_password'),
+                        confirm_label=t('settings.confirm_password'),
+                        on_change=_sync_button,
+                        on_submit=_update_password,
+                    )
+
+                with ui.element('div').classes('card-footer justify-end'):
+                    update_btn = i18n.bind(
+                        ui.button(t('settings.update_password'), icon='lock_reset',
+                                  on_click=_update_password)
+                        .props('no-caps').classes('button button-primary'),
+                        'settings.update_password',
+                    )
+                    update_btn.disable()
 
         # Preferences: language and theme, both persisted per user
         with ui.element('div').classes('card w-full'):

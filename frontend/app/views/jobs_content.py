@@ -6,6 +6,8 @@ counts), then one column per job status holding job cards, refreshed every 5s.
 
 from __future__ import annotations
 
+import json
+
 from nicegui import app, ui
 
 from components.dialogs import confirm_dialog, info_dialog
@@ -38,7 +40,14 @@ _COL_TITLE = {
 _COL_ORDER = ['queued', 'running', 'succeeded', 'failed', 'cancelled']
 
 # Icon shown next to the job type on a card
-_TYPE_ICONS = {'demo.sleep': 'bedtime'}
+_TYPE_ICONS = {'demo.sleep': 'bedtime',
+               'maintenance.cleanup_sessions': 'cleaning_services'}
+
+# Human description per job type: (description key, params docs key)
+_TYPE_DESC = {
+    'demo.sleep': ('jobs.type.demo_sleep', 'jobs.params.demo_sleep'),
+    'maintenance.cleanup_sessions': ('jobs.type.cleanup_sessions', 'jobs.params.cleanup_sessions'),
+}
 
 
 def content() -> None:
@@ -138,6 +147,11 @@ def content() -> None:
                                             size='0.9rem').classes('text-muted')
                                     ui.label(j['job_type']).classes('text-sm font-medium')
 
+                                # What this job does (known types)
+                                desc_key = _TYPE_DESC.get(j['job_type'], (None, None))[0]
+                                if desc_key:
+                                    ui.label(t(desc_key)).classes('text-xs text-muted mb-1')
+
                                 # Result or error
                                 if j.get('error'):
                                     ui.label(j['error'][:110]).classes(
@@ -160,42 +174,225 @@ def content() -> None:
                                                 'font-size:11px;margin-right:3px')
                                             ui.label(str(j['finished_at'])[:19])
 
-                                # Footer: params + cancel
+                                # Footer: params + details/cancel
                                 ui.element('div').classes('divider mt-0 mb-2')
                                 with ui.row().classes('items-center justify-between'):
                                     ui.label(str(j.get('params') or '{}')[:40]).classes(
                                         'text-xs text-faint font-mono truncate')
-                                    if status in ('queued', 'running'):
-                                        async def _cancel(job_id: int = j['id']) -> None:
-                                            confirmed = await confirm_dialog(
-                                                t('jobs.cancel_confirm').format(id=job_id),
-                                                title=t('jobs.cancel_title'), danger=True)
-                                            if not confirmed:
-                                                return
-                                            try:
-                                                with get_session() as api:
-                                                    api.post(f'/jobs/{job_id}/cancel')
-                                            except Exception as exc:
-                                                await info_dialog(
-                                                    str(getattr(exc, 'detail', exc)),
-                                                    title=t('jobs.not_possible'), danger=True)
-                                                return
-                                            notify(t('jobs.cancelled_msg').format(id=job_id), type='warning')
-                                            board.refresh()
+                                    with ui.row().classes('items-center gap-0'):
+                                        ui.button(icon='info', on_click=lambda _, job=j:
+                                                  _show_details(job)) \
+                                            .props('flat dense round').tooltip(t('jobs.details'))
 
-                                        ui.button(t('jobs.cancel'), color='white', on_click=_cancel) \
-                                            .props('flat no-caps') \
-                                            .classes('button button-outline button-sm')
+                                        if status in ('queued', 'running'):
+                                            async def _cancel(job_id: int = j['id']) -> None:
+                                                confirmed = await confirm_dialog(
+                                                    t('jobs.cancel_confirm').format(id=job_id),
+                                                    title=t('jobs.cancel_title'), danger=True)
+                                                if not confirmed:
+                                                    return
+                                                try:
+                                                    with get_session() as api:
+                                                        api.post(f'/jobs/{job_id}/cancel')
+                                                except Exception as exc:
+                                                    await info_dialog(
+                                                        str(getattr(exc, 'detail', exc)),
+                                                        title=t('jobs.not_possible'), danger=True)
+                                                    return
+                                                notify(t('jobs.cancelled_msg').format(id=job_id), type='warning')
+                                                board.refresh()
+
+                                            ui.button(t('jobs.cancel'), color='white', on_click=_cancel) \
+                                                .props('flat no-caps') \
+                                                .classes('button button-outline button-sm')
 
         if not jobs:
             with ui.column().classes('card w-full items-center gap-2 p-8 mt-2'):
                 ui.icon('inbox', size='2rem').classes('text-muted')
                 ui.label(t('jobs.empty')).classes('text-muted')
 
+    def _show_details(job: dict) -> None:
+        """Everything about one job: what it does, its params and result."""
+        with ui.dialog() as dialog, ui.column().classes('login-card gap-3') \
+                .style('min-width: 480px; max-width: 640px;'):
+            with ui.row().classes('items-center gap-2'):
+                ui.icon(_TYPE_ICONS.get(job['job_type'], 'task_alt'), size='1.1rem') \
+                    .classes('text-muted')
+                ui.label(f"#{job['id']} — {job['job_type']}").classes('section-title')
+
+            desc_key, params_key = _TYPE_DESC.get(job['job_type'], (None, None))
+            if desc_key:
+                ui.label(t(desc_key)).classes('text-sm')
+            if params_key:
+                with ui.element('div').classes('w-full p-2').style(
+                        'background: var(--faint); border-radius: 6px;'):
+                    ui.label(t(params_key)).classes('text-xs text-muted')
+
+            for label, value in [
+                ('status', job.get('status')),
+                ('priority', job.get('priority')),
+                ('created_by', job.get('created_by')),
+                ('created_at', job.get('created_at')),
+                ('started_at', job.get('started_at')),
+                ('finished_at', job.get('finished_at')),
+            ]:
+                with ui.row().classes('w-full justify-between no-wrap'):
+                    ui.label(label).classes('text-xs text-muted')
+                    ui.label(str(value)).classes('text-xs font-mono')
+
+            ui.label(t('jobs.params_label')).classes('field-label mb-0 mt-2')
+            ui.html(f'<pre style="margin:0;font-size:12px;">'
+                    f'{json.dumps(job.get("params") or {}, indent=2)}</pre>')
+
+            if job.get('result'):
+                ui.label(t('jobs.result_label')).classes('field-label mb-0 mt-2')
+                ui.html(f'<pre style="margin:0;font-size:12px;">'
+                        f'{json.dumps(job["result"], indent=2)}</pre>')
+            if job.get('error'):
+                ui.label(t('jobs.error_label')).classes('field-label mb-0 mt-2')
+                ui.label(job['error']).classes('text-xs text-negative')
+
+            with ui.row().classes('w-full justify-end'):
+                ui.button(t('common.close'), on_click=dialog.close).classes('button button-secondary')
+        dialog.open()
+
+    # -- Schedules (admin): what runs periodically, editable -------------------
+    @ui.refreshable
+    def schedules_panel() -> None:
+        from shared.client.async_client import ApiError as _ApiError
+        try:
+            with get_session() as api:
+                schedules = api.get('/schedules')
+        except _ApiError as exc:
+            if getattr(exc, 'status_code', None) == 403:
+                return  # not an admin: hide the panel silently
+            raise
+
+        with ui.element('div').classes('card w-full gap-0 p-0 mb-6'):
+            with ui.row().classes('w-full items-center justify-between px-4 py-3') \
+                    .style('border-bottom: 1px solid var(--border);'):
+                with ui.row().classes('items-center gap-2'):
+                    ui.icon('schedule_send', size='1rem').classes('text-muted')
+                    ui.label(t('jobs.schedules_title')).classes('card-title')
+                ui.label(t('jobs.schedules_desc')).classes('text-xs text-muted')
+
+            for sc in schedules:
+                with ui.row().classes('w-full items-center px-4 py-3 no-wrap') \
+                        .style('border-bottom: 1px solid var(--border);'):
+                    with ui.column().classes('flex-1 gap-0 min-w-0'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.icon(_TYPE_ICONS.get(sc['job_type'], 'task_alt'),
+                                    size='0.9rem').classes('text-muted')
+                            ui.label(sc['job_type']).classes('text-sm font-medium truncate')
+                            desc_key = _TYPE_DESC.get(sc['job_type'], (None, None))[0]
+                            if desc_key:
+                                ui.label(t(desc_key)).classes('text-xs text-muted truncate')
+                    with ui.element('span').classes('chip font-mono'):
+                        ui.icon('schedule').style('font-size:11px;margin-right:3px')
+                        ui.label(sc['cron'])
+                    with ui.element('span').classes(
+                        'badge ' + ('badge-success' if sc['enabled'] else 'badge-default')):
+                        ui.label(t('jobs.enabled') if sc['enabled'] else t('jobs.disabled'))
+                    ui.label(str(sc.get('params') or '{}')[:30]).classes(
+                        'text-xs text-faint font-mono truncate').style('width: 110px;')
+
+                    def _patch(sc_: dict = sc, **changes) -> None:
+                        with get_session() as api:
+                            api.patch(f"/schedules/{sc_['id']}", json=changes)
+                        schedules_panel.refresh()
+                        board.refresh()
+
+                    def _run_now(sc_: dict = sc) -> None:
+                        with get_session() as api:
+                            api.post('/jobs', json={'job_type': sc_['job_type'],
+                                                    'params': sc_.get('params') or {}})
+                        notify(t('jobs.run_now_msg').format(type=sc_['job_type']),
+                               type='positive')
+                        board.refresh()
+
+                    def _edit_schedule(sc_: dict = sc) -> None:
+                        with ui.dialog() as dialog, ui.column().classes('login-card gap-3') \
+                                .style('min-width: 420px;'):
+                            ui.label(t('jobs.edit_schedule').format(id=sc_['id'])) \
+                                .classes('section-title')
+
+                            ui.label(t('jobs.cron_label')).classes('field-label')
+                            cron = ui.input(value=sc_['cron'], placeholder='0 3 * * *') \
+                                .classes('w-full').style('font-family: monospace;')
+                            ui.label(t('jobs.cron_hint')).classes('text-xs text-muted')
+
+                            ui.label(t('jobs.params_label')).classes('field-label')
+                            import json as _json
+                            params = ui.textarea(
+                                value=_json.dumps(sc_.get('params') or {}, indent=2),
+                            ).classes('w-full').style('font-family: monospace;')
+
+                            enabled = ui.switch(t('jobs.enabled'), value=sc_['enabled'])
+
+                            async def save() -> None:
+                                changes: dict = {}
+                                if cron.value.strip() and cron.value != sc_['cron']:
+                                    changes['cron'] = cron.value.strip()
+                                if params.value != _json.dumps(sc_.get('params') or {}, indent=2):
+                                    try:
+                                        import json as _j
+                                        changes['params'] = _j.loads(params.value or '{}')
+                                    except Exception:
+                                        notify(t('jobs.invalid_json'), type='negative')
+                                        return
+                                if enabled.value != sc_['enabled']:
+                                    changes['enabled'] = enabled.value
+                                if not changes:
+                                    dialog.close()
+                                    return
+                                try:
+                                    with get_session() as api:
+                                        api.patch(f"/schedules/{sc_['id']}", json=changes)
+                                except Exception as exc:
+                                    await info_dialog(str(getattr(exc, 'detail', exc)),
+                                                      title=t('jobs.not_possible'), danger=True)
+                                    return
+                                notify(t('jobs.schedule_saved'), type='positive')
+                                dialog.close()
+                                schedules_panel.refresh()
+
+                            with ui.row().classes('w-full justify-end gap-2'):
+                                ui.button(t('common.cancel'), on_click=dialog.close) \
+                                    .classes('button button-secondary')
+                                ui.button(t('common.save'), on_click=save) \
+                                    .classes('button button-primary')
+                        dialog.open()
+
+                    async def _delete_schedule(sc_: dict = sc) -> None:
+                        confirmed = await confirm_dialog(
+                            t('jobs.delete_schedule_confirm').format(id=sc_['id']),
+                            title=t('jobs.delete_schedule_title'), danger=True)
+                        if not confirmed:
+                            return
+                        with get_session() as api:
+                            api.delete(f"/schedules/{sc_['id']}")
+                        notify(t('jobs.schedule_deleted'), type='warning')
+                        schedules_panel.refresh()
+
+                    with ui.row().classes('items-center gap-1'):
+                        ui.button(icon=sc['enabled'] and 'pause' or 'play_arrow',
+                                  on_click=lambda _, s=sc: _patch(s,
+                                      enabled=not s['enabled'])) \
+                            .props('flat dense round').tooltip(
+                                t('jobs.tip.disable') if sc['enabled'] else t('jobs.tip.enable'))
+                        ui.button(icon='bolt', on_click=lambda _, s=sc: _run_now(s)) \
+                            .props('flat dense round').tooltip(t('jobs.run_now'))
+                        ui.button(icon='edit', on_click=lambda _, s=sc: _edit_schedule(s)) \
+                            .props('flat dense round').tooltip(t('jobs.tip.edit'))
+                        ui.button(icon='delete', on_click=lambda _, s=sc: _delete_schedule(s)) \
+                            .props('flat dense round color=negative') \
+                            .tooltip(t('jobs.tip.delete'))
+
     with ui.row().classes('w-full justify-end'):
         ui.button(t('jobs.submit_new'), icon='add',
                   on_click=lambda: ui.navigate.to('/jobs/new')).props('outline no-caps')
 
+    schedules_panel()
     board()
     ui.timer(5.0, safe_auto_refresh(board.refresh))
 

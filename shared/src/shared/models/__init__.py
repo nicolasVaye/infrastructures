@@ -21,7 +21,8 @@ from shared.models.idp import (
     OIDCCallbackIn,
     PublicProviderOut,
 )
-from shared.models.jobs import JobCreate, JobOut, JobStatusOut, ScheduleCreate, ScheduleOut
+from shared.models.jobs import (JobCreate, JobOut, JobStatusOut, ScheduleCreate,
+                                ScheduleOut, ScheduleUpdate)
 
 __all__ = [
     "AuditOut",
@@ -41,6 +42,7 @@ __all__ = [
     "RoleOut",
     "ScheduleCreate",
     "ScheduleOut",
+    "ScheduleUpdate",
     "SessionOut",
     "TokenPair",
     "UserCreate",

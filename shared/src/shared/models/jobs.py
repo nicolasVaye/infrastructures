@@ -52,6 +52,14 @@ class ScheduleCreate(BaseModel):
     enabled: bool = True
 
 
+class ScheduleUpdate(BaseModel):
+    """PATCH /schedules/{id}: partial update of a schedule."""
+
+    params: dict[str, Any] | None = None
+    cron: str | None = None
+    enabled: bool | None = None
+
+
 class ScheduleOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

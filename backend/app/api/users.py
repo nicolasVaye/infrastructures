@@ -195,6 +195,12 @@ async def reset_password(user_id: int, admin: AdminUser, session: DbSession) -> 
     user = await session.get(UserRecord, user_id)
     if user is None:
         raise HTTPException(404, "User not found.")
+    if user.auth_provider != "local":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"User '{user.username}' is federated — their password is managed "
+            "by their identity provider.",
+        )
     user.password_hash = hash_password(DEFAULT_USER_PASSWORD)
     user.must_change_password = True
     await record(session, AuditAction.PASSWORD_RESET, user_id=admin.id,
@@ -243,6 +249,14 @@ async def update_profile(body: ProfileUpdate, user: CurrentUser, session: DbSess
 
 @router.put("/me/password", status_code=204)
 async def change_password(body: PasswordChange, user: CurrentUser, session: DbSession) -> None:
+    if user.auth_provider != "local":
+        # Federated account: the password lives in the IdP (Keycloak...),
+        # a local one would never be used and would only confuse the user.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This account is managed by an external identity provider — "
+            "change the password there.",
+        )
     _validate_password(body.new_password)
     user.password_hash = hash_password(body.new_password)
     user.must_change_password = False
