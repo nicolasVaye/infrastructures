@@ -51,10 +51,13 @@ def content() -> None:
                 with ui.row().classes('w-full items-center px-4 py-3 no-wrap').style(
                     'border-bottom: 1px solid var(--border, #f4f4f5);'
                 ):
-                    with ui.column().classes('flex-1 gap-0'):
-                        ui.label(i['name']).classes('truncate')
-                        ui.label('enabled' if i['enabled'] else 'disabled').classes(
-                            'text-xs ' + ('text-positive' if i['enabled'] else 'text-muted'))
+                    with ui.column().classes('flex-1 gap-1 min-w-0'):
+                        ui.label(i['name']).classes('truncate').style('font-weight: 500;')
+                        with ui.element('span').classes(
+                            'badge ' + ('badge-success' if i['enabled'] else 'badge-danger')
+                        ).style('gap: 4px;'):
+                            ui.icon('check_circle' if i['enabled'] else 'block', size='0.9rem')
+                            ui.label(t('idps.enable') if i['enabled'] else t('idps.disabled'))
 
                     ui.label(i['issuer_url']).classes('text-xs text-muted truncate').style(
                         'width: 280px; font-family: monospace;')
@@ -112,11 +115,16 @@ def content() -> None:
                     async def _edit(item: dict = i) -> None:
                         await _edit_dialog(item)
 
-                    with ui.row().style('width: 150px;'):
-                        ui.button(icon='power_settings_new', on_click=_toggle).props('flat dense')
-                        ui.button(icon='health_and_safety', on_click=_verify).props('flat dense color=info')
-                        ui.button(icon='edit', on_click=_edit).props('flat dense')
-                        ui.button(icon='delete', on_click=_delete).props('flat dense color=negative')
+                    with ui.row().classes('items-center gap-1').style('width: 150px;'):
+                        ui.button(icon='power_settings_new', on_click=_toggle) \
+                            .props('flat dense round').tooltip(
+                                t('idps.tip.disable') if i['enabled'] else t('idps.tip.enable'))
+                        ui.button(icon='health_and_safety', on_click=_verify) \
+                            .props('flat dense round color=info').tooltip(t('idps.tip.verify'))
+                        ui.button(icon='edit', on_click=_edit) \
+                            .props('flat dense round').tooltip(t('idps.tip.edit'))
+                        ui.button(icon='delete', on_click=_delete) \
+                            .props('flat dense round color=negative').tooltip(t('idps.tip.delete'))
 
     async def _edit_dialog(item: dict) -> None:
         with ui.dialog() as dialog, ui.card().classes('dialog-card').style('min-width: 520px;'):
@@ -177,61 +185,73 @@ def content() -> None:
                 idps_table.refresh()
 
             with ui.row().classes('w-full justify-end gap-2'):
-                ui.button(t('idps.cancel'), on_click=dialog.close).props('flat no-caps')
-                ui.button(t('idps.save'), icon='save', on_click=_save).props('no-caps')
+                ui.button(t('idps.cancel'), on_click=dialog.close).classes('button button-secondary')
+                ui.button(t('idps.save'), icon='save', on_click=_save).classes('button button-primary')
         dialog.open()
 
+    # -- creation dialog (same pattern as the users tab) ----------------------
+    def _open_create_dialog() -> None:
+        with ui.dialog() as dialog, ui.column().classes('login-card gap-3') \
+                .style('min-width: 520px; max-width: 640px;'):
+            ui.label(t('idps.add_title')).classes('section-title')
+            ui.label(t('idps.add_desc')).classes('text-sm text-muted')
+
+            ui.label(t('idps.f_name')).classes('field-label')
+            f_name = ui.input(placeholder='Corp Keycloak').classes('w-full')
+
+            ui.label(t('idps.f_issuer')).classes('field-label')
+            f_issuer = ui.input(placeholder='https://keycloak.example/realms/myrealm'
+                                ).classes('w-full').style('font-family: monospace;')
+
+            with ui.row().classes('w-full gap-4 no-wrap'):
+                with ui.element('div').classes('w-full'):
+                    ui.label(t('idps.f_client_id')).classes('field-label')
+                    f_client = ui.input(placeholder='infrastructures').classes('w-full') \
+                        .style('font-family: monospace;')
+                with ui.element('div').classes('w-full'):
+                    ui.label(t('idps.f_secret')).classes('field-label')
+                    f_secret = ui.input(password=True, password_toggle_button=True,
+                                        placeholder='••••••••').classes('w-full')
+
+            ui.label(t('idps.f_role')).classes('field-label')
+            f_role = ui.select(_ROLE_OPTIONS, value='user').props('outlined dense').classes('w-full')
+            ui.label(t('idps.tip') + '/auth/oidc/callback (frontend base URL)').classes('text-xs text-muted')
+
+            f_jit = ui.switch(t('idps.jit'), value=True)
+
+            async def create() -> None:
+                payload = {
+                    'name': f_name.value.strip(),
+                    'issuer_url': f_issuer.value.strip(),
+                    'client_id': f_client.value.strip(),
+                    'client_secret': f_secret.value,
+                    'default_role': f_role.value,
+                    'auto_create_users': f_jit.value,
+                    'enabled': True,
+                }
+                if not all([payload['name'], payload['issuer_url'],
+                            payload['client_id'], payload['client_secret']]):
+                    notify(t('idps.required'), type='warning')
+                    return
+                try:
+                    with get_session() as api:
+                        api.post('/idps', json=payload)
+                except Exception as exc:
+                    await info_dialog(str(getattr(exc, 'detail', exc)),
+                                      title=t('idps.not_possible'), danger=True)
+                    return
+                notify(t('idps.created_msg').format(name=payload['name']), type='positive')
+                dialog.close()
+                idps_table.refresh()
+
+            with ui.row().classes('w-full justify-end gap-2'):
+                ui.button(t('idps.cancel'), on_click=dialog.close).classes('button button-secondary')
+                ui.button(t('idps.add'), icon='add', on_click=create).classes('button button-primary')
+        dialog.open()
+
+    # Add-provider button above the table, like the users tab
+    with ui.row().classes('w-full justify-end mb-3'):
+        ui.button(t('idps.add'), icon='add', on_click=_open_create_dialog) \
+            .classes('button button-primary')
+
     idps_table()
-
-    # -- creation form --------------------------------------------------------
-
-    async def _create() -> None:
-        payload = {
-            'name': f_name.value.strip(),
-            'issuer_url': f_issuer.value.strip(),
-            'client_id': f_client.value.strip(),
-            'client_secret': f_secret.value,
-            'default_role': f_role.value,
-            'auto_create_users': f_jit.value,
-            'enabled': True,
-        }
-        if not all([payload['name'], payload['issuer_url'], payload['client_id'], payload['client_secret']]):
-            notify(t('idps.required'), type='warning')
-            return
-        try:
-            with get_session() as api:
-                api.post('/idps', json=payload)
-        except Exception as exc:
-            await info_dialog(str(getattr(exc, 'detail', exc)), title=t('idps.not_possible'), danger=True)
-            return
-        notify(t('idps.created_msg').format(name=payload['name']), type='positive')
-        f_name.value = f_issuer.value = f_client.value = f_secret.value = ''
-        f_jit.value = True
-        idps_table.refresh()
-
-    with ui.column().classes('card w-full gap-4 p-6').style('max-width: 720px;'):
-        ui.label(t('idps.add_title')).classes('section-title')
-        ui.label(t('idps.add_desc')).classes('text-sm text-muted')
-
-        ui.label(t('idps.f_name')).classes('field-label')
-        f_name = ui.input(placeholder='Corp Keycloak').classes('w-full')
-
-        ui.label(t('idps.f_issuer')).classes('field-label')
-        f_issuer = ui.input(placeholder='https://keycloak.example/realms/myrealm'
-                            ).classes('w-full').style('font-family: monospace;')
-
-        with ui.row().classes('w-full gap-4 no-wrap'):
-            with ui.element('div').classes('w-full'):
-                ui.label(t('idps.f_client_id')).classes('field-label')
-                f_client = ui.input(placeholder='infrastructures').classes('w-full').style('font-family: monospace;')
-            with ui.element('div').classes('w-full'):
-                ui.label(t('idps.f_secret')).classes('field-label')
-                f_secret = ui.input(password=True, password_toggle_button=True,
-                                    placeholder='••••••••').classes('w-full')
-
-        ui.label(t('idps.f_role')).classes('field-label')
-        f_role = ui.select(_ROLE_OPTIONS, value='user').classes('w-full')
-        ui.label(t('idps.tip') + '/auth/oidc/callback (frontend base URL)').classes('text-xs text-muted')
-
-        f_jit = ui.switch(t('idps.jit'), value=True)
-        ui.button(t('idps.add'), icon='add', on_click=_create).classes('button button-primary')
