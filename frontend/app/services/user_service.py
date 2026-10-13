@@ -189,6 +189,9 @@ class UserService:
     def set_language(self, user_id: int, language: str) -> None:
         self.session.patch('/me/profile', json={'language': language})
 
+    def set_theme(self, user_id: int, theme: str) -> None:
+        self.session.patch('/me/profile', json={'theme': theme})
+
     def delete_user(self, user_id: int) -> None:
         try:
             self.session.delete(f'/users/{user_id}')

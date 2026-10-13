@@ -37,16 +37,6 @@ def content() -> None:
             i18n.bind(ui.label(t('settings.title')).classes('page-title'), 'settings.title')
             i18n.bind(ui.label(t('settings.subtitle')).classes('text-sm text-muted'), 'settings.subtitle')
 
-        def _on_language(e) -> None:
-            set_language(e.value)
-            audit_record(AuditAction.LANGUAGE_CHANGED, details=e.value)
-            notify(t('settings.language_saved'), type='positive')
-
-        with ui.column().classes('gap-1 items-end flex-shrink-0').style('min-width: 200px;'):
-            i18n.bind(ui.label(t('language.label')).classes('field-label').style('margin-bottom: 0;'),
-                      'language.label')
-            ui.select(options=LANGUAGES, value=current_language(), on_change=_on_language) \
-                .props('outlined dense').classes('w-full')
     ui.element('div').classes('divider mb-4')
 
     # Profile & security, side by side
@@ -285,3 +275,36 @@ def content() -> None:
                     'settings.update_password',
                 )
                 update_btn.disable()
+
+        # Preferences: language and theme, both persisted per user
+        with ui.element('div').classes('card w-full'):
+            with ui.column().classes('gap-1 w-full'):
+                i18n.bind(ui.label(t('settings.preferences')).classes('card-title'), 'settings.preferences')
+                i18n.bind(ui.label(t('settings.preferences_desc')).classes('card-description'), 'settings.preferences_desc')
+
+            def _on_language(e) -> None:
+                set_language(e.value)
+                audit_record(AuditAction.LANGUAGE_CHANGED, details=e.value)
+                notify(t('settings.language_saved'), type='positive')
+
+            with ui.element('div').classes('w-full'):
+                i18n.bind(ui.label(t('language.label')).classes('field-label'), 'language.label')
+                ui.select(options=LANGUAGES, value=current_language(), on_change=_on_language) \
+                    .props('outlined dense').classes('w-full').style('max-width: 320px;')
+
+            def _on_theme(e) -> None:
+                theme = e.value
+                ui.dark_mode(theme == 'dark')
+                app.storage.user['theme'] = theme
+                with get_session() as session:
+                    UserService(session).set_theme(user_id, theme)
+                audit_record(AuditAction.THEME_CHANGED, details=theme)
+                notify(t('settings.theme_saved'), type='positive')
+
+            with ui.element('div').classes('w-full mt-4'):
+                i18n.bind(ui.label(t('settings.theme')).classes('field-label'), 'settings.theme')
+                ui.select(
+                    options={'light': t('settings.theme_light'), 'dark': t('settings.theme_dark')},
+                    value=app.storage.user.get('theme', 'light'),
+                    on_change=_on_theme,
+                ).props('outlined dense').classes('w-full').style('max-width: 320px;')

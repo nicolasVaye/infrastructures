@@ -17,8 +17,7 @@ from models.audit import AuditAction
 from models.enums import UserRole
 from services.audit_service import record as audit_record
 from services.i18n import t
-from services.user_service import DEFAULT_USER_PASSWORD, UserService
-from views._common import page_header
+
 
 # The bootstrap admin is protected: it can never be deleted or disabled.
 _PROTECTED_USERNAME = 'admin'
@@ -43,32 +42,14 @@ def _role_label(role: str) -> str:
     return t(entry[2]) if entry else role
 
 
-def _is_admin() -> bool:
-    return app.storage.user.get('role') == UserRole.ADMIN.value
+def users_tab() -> None:
+    """Users management panel (used as a tab inside /settings)."""
+    _users_tab(app.storage.user.get('username', ''))
 
 
-def content() -> None:
-    page_header(t('users.title'), t('users.subtitle'))
-
-    if not _is_admin():
-        with ui.column().classes('card w-full items-center gap-2 p-8'):
-            ui.icon('lock', size='2rem').classes('text-muted')
-            ui.label(t('users.access_denied')).classes('section-title')
-            ui.label(t('users.admin_only')).classes('text-muted')
-        return
-
-    current_username = app.storage.user.get('username', '')
-
-    # ------------------------------------------------------------------ tabs
-    with ui.tabs().classes('tabs-bar').props('dense') as tabs:
-        tab_users = ui.tab(t('roles.tab.users'), icon='group')
-        tab_roles = ui.tab(t('roles.tab.roles'), icon='admin_panel_settings')
-
-    with ui.tab_panels(tabs, value=tab_users).classes('w-full'):
-        with ui.tab_panel(tab_users):
-            _users_tab(current_username)
-        with ui.tab_panel(tab_roles):
-            _roles_tab()
+def roles_tab() -> None:
+    """Roles catalog panel (used as a tab inside /settings)."""
+    _roles_tab()
 
 
 # ================================================================= users tab

@@ -190,13 +190,19 @@ window.addEventListener('storage', function (e) {
 def with_base_layout(route_handler):
     @wraps(route_handler)
     def wrapper(*args, **kwargs):
-        ui.colors(primary='#18181b', secondary='#f4f4f5', positive='#4caf50', negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#e4e4e7')
+        if app.storage.user.get('theme') == 'dark':
+            ui.colors(primary='#e4e4e7', secondary='#3f3f46', positive='#4caf50', negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#18181b')
+        else:
+            ui.colors(primary='#18181b', secondary='#f4f4f5', positive='#4caf50', negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#e4e4e7')
         _add_global_css(shared=True)
         ui.add_head_html('<link rel="stylesheet" href="/assets/css/icons.css">', shared=True)
         ui.add_head_html(_LOGOUT_WATCHER_JS, shared=True)
 
         # Preload avoids a layout-shift flash when the sidebar logo first renders
         ui.add_head_html('<link rel="preload" href="/assets/images/logo.png" as="image">')
+
+        # Per-user theme, persisted on the account (default light).
+        ui.dark_mode(app.storage.user.get('theme') == 'dark')
 
         if 'sidebar-collapsed' not in app.storage.user:
             app.storage.user['sidebar-collapsed'] = False
@@ -235,11 +241,6 @@ def root():
     '/account'    : account,
     '/jobs'       : jobs_list,
     '/jobs/new'   : jobs_new,
-    # Admin areas now live as tabs inside /settings; old URLs redirect there.
-    '/users'      : _legacy_admin_redirect,
-    '/audit'      : _legacy_admin_redirect,
-    '/sessions'   : _legacy_admin_redirect,
-    '/idps'       : _legacy_admin_redirect,
     })
 
 
@@ -280,20 +281,33 @@ def print_demo():
     _localized(print_demo_content.content)
 
 def settings():
+    from models.enums import UserRole
+    if app.storage.user.get('role') != UserRole.ADMIN.value:
+        ui.navigate.to('/')
+        return
     _localized(settings_content.content)
 
-
-def _legacy_admin_redirect():
-    """Old bookmarked admin URLs (/users, /audit…) land on the /settings hub."""
-    ui.navigate.to('/settings')
 
 def account():
     user_settings_content.content()
 
+def _admin_guard():
+    from models.enums import UserRole
+    if app.storage.user.get('role') != UserRole.ADMIN.value:
+        ui.navigate.to('/')
+        return True
+    return False
+
+
 def jobs_list():
+    if _admin_guard():
+        return
     _localized(jobs_content.content)
 
+
 def jobs_new():
+    if _admin_guard():
+        return
     _localized(job_submit_content.content)
 
 def production_search(searchFilter):

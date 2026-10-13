@@ -51,6 +51,8 @@ class UserRecord(Base):
     # browsers/tabs of the same user can live-reload the image from /avatar.
     avatar_version: Mapped[int] = mapped_column(nullable=False, server_default=text("0"))
     language: Mapped[str] = mapped_column(String(8), nullable=False, server_default=text("'en'"))
+    # UI theme preference: 'light' or 'dark' (applied at login by the frontend).
+    theme: Mapped[str] = mapped_column(String(8), nullable=False, server_default=text("'light'"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     # Federated identity: where the credentials live, and the external subject
     # (the 'sub' claim of the OIDC ID token) when auth_provider == 'oidc'.

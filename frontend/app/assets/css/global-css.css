@@ -69,7 +69,8 @@
   --font-bold:   700;
 
   --transition: 0.15s ease;
-}
+
+  --panel-bg: #F8FAFD;}
 
 html { font-size: var(--app-font-size); }
 body { font-size: var(--app-font-size) !important; }
@@ -1422,3 +1423,47 @@ button.audit-filter-item {
 button.audit-filter-item:hover {
     background: var(--faint, #f4f4f5);
 }
+
+
+/* ============ Dark theme ============
+   Applied by ui.dark_mode(True) (Quasar sets body.body--dark). Only the
+   custom design tokens are overridden: every component built on these
+   variables (cards, badges, fields, sidebar, header) flips with them. */
+body.body--dark {
+  --bg:           #09090b;
+  --fg:           #fafafa;
+
+  --primary:      #e4e4e7;
+  --primary-fg:   #18181b;
+
+  --secondary:    #27272a;
+  --secondary-fg: #d4d4d8;
+
+  --muted:        #27272a;
+  --muted-fg:     #a1a1aa;
+
+  --faint:        #18181b;
+  --faint-fg:     #71717a;
+
+  --accent:       #3f3f46;
+  --accent-fg:    #e4e4e7;
+
+  --success-light:#0f2412;
+  --warning-light:#2a1d04;
+  --danger-light: #2a0f0f;
+  --info-light:   #0c1a2e;
+
+  --border:       #3f3f46;
+  --input-border: #52525b;
+  --ring:         #e4e4e7;
+
+  --panel-bg:     #18181b;
+}
+
+/* Text and surfaces that hardcode black/white via helper classes */
+body.body--dark .text-black { color: var(--fg) !important; }
+body.body--dark .bg-white,
+body.body--dark .text-white { color: var(--fg); }
+
+/* The GitHub mark is a black SVG: invert it so it stays visible */
+body.body--dark img[src*="GitHub"] { filter: invert(1); }

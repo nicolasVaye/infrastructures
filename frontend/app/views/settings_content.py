@@ -41,6 +41,7 @@ def content() -> None:
     with ui.tabs().classes('tabs-bar') as tabs:
         tab_general  = ui.tab(name='general',  label=t('appsettings.tab.general'),  icon='tune')
         tab_users    = ui.tab(name='users',    label=t('appsettings.tab.users'),    icon='group')
+        tab_roles    = ui.tab(name='roles',    label=t('appsettings.tab.roles'),    icon='admin_panel_settings')
         tab_sessions = ui.tab(name='sessions', label=t('appsettings.tab.sessions'), icon='devices')
         tab_audit    = ui.tab(name='audit',    label=t('appsettings.tab.audit'),    icon='history')
         tab_idps     = ui.tab(name='idps',     label=t('appsettings.tab.idps'),     icon='vpn_key')
@@ -49,7 +50,9 @@ def content() -> None:
         with ui.tab_panel(tab_general):
             _general_panel()
         with ui.tab_panel(tab_users):
-            users_content.content()
+            users_content.users_tab()
+        with ui.tab_panel(tab_roles):
+            users_content.roles_tab()
         with ui.tab_panel(tab_sessions):
             sessions_content.content()
         with ui.tab_panel(tab_audit):

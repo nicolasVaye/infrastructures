@@ -15,7 +15,6 @@ from models.audit import AuditAction
 from models.enums import UserRole
 from services.audit_service import AuditService
 from services.i18n import t
-from views._common import page_header
 
 # action value -> (Material icon, badge class) for the activity list.
 _ACTION_META: dict[str, tuple[str, str]] = {
@@ -31,6 +30,7 @@ _ACTION_META: dict[str, tuple[str, str]] = {
     AuditAction.USER_DEACTIVATED.value: ('block', 'badge badge-warning'),
     AuditAction.PROFILE_UPDATED.value:  ('manage_accounts', 'badge badge-info'),
     AuditAction.LANGUAGE_CHANGED.value: ('language', 'badge badge-default'),
+    AuditAction.THEME_CHANGED.value:     ('dark_mode', 'badge badge-default'),
     AuditAction.SESSION_REVOKED.value:  ('no_accounts', 'badge badge-warning'),
     AuditAction.JOB_SUBMITTED.value:    ('play_circle', 'badge badge-info'),
     AuditAction.JOB_CANCELLED.value:    ('cancel', 'badge badge-warning'),
@@ -55,14 +55,7 @@ def _action_label(action: str) -> str:
 
 
 def content() -> None:
-    page_header(t('audit.title'), t('audit.subtitle'))
-
-    if not _is_admin():
-        with ui.column().classes('card w-full items-center gap-2 p-8'):
-            ui.icon('lock', size='2rem').classes('text-muted')
-            ui.label(t('audit.admin_only')).classes('text-muted')
-        return
-
+    """Audit tab of the /settings admin hub (no page header; guard in hub)."""
     # Filter state: set of selected action values (multi-select).
     # An empty set means "all actions".
     state = {'actions': set()}

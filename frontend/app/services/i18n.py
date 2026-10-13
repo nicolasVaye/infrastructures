@@ -58,7 +58,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'settings.subtitle':       {'en': 'Manage your profile and preferences', 'de': 'Verwalte dein Profil und deine Einstellungen'},
     'settings.profile':        {'en': 'Profile', 'de': 'Profil'},
     'settings.profile_desc':   {'en': 'Update your photo and personal details.', 'de': 'Aktualisiere dein Foto und deine persönlichen Daten.'},
-    'settings.preferences_desc':{'en': 'Choose the language used across the app.', 'de': 'Wähle die appweit verwendete Sprache.'},
+    'settings.preferences_desc':{'en': 'Language and appearance of the app, saved to your account.', 'de': 'Sprache und Erscheinungsbild der App, im Konto gespeichert.'},
+    'settings.theme':          {'en': 'Theme', 'de': 'Design'},
+    'settings.theme_light':    {'en': 'Light', 'de': 'Hell'},
+    'settings.theme_dark':     {'en': 'Dark', 'de': 'Dunkel'},
+    'settings.theme_saved':    {'en': 'Theme saved', 'de': 'Design gespeichert'},
     'settings.security_desc':  {'en': 'Set a strong, unique password to protect your account.', 'de': 'Lege ein starkes, einzigartiges Passwort zum Schutz deines Kontos fest.'},
     'settings.photo':          {'en': 'Profile photo', 'de': 'Profilbild'},
     'settings.upload_photo':   {'en': 'Upload photo', 'de': 'Foto hochladen'},
@@ -166,6 +170,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'appsettings.tab.sessions': {'en': 'Sessions', 'de': 'Sitzungen'},
     'appsettings.tab.audit':    {'en': 'Audit log', 'de': 'Audit-Protokoll'},
     'appsettings.tab.idps':      {'en': 'Providers', 'de': 'Anbieter'},
+    'appsettings.tab.roles':     {'en': 'Roles', 'de': 'Rollen'},
 
     # Audit log view
     'audit.title':        {'en': 'Audit Log', 'de': 'Audit-Protokoll'},

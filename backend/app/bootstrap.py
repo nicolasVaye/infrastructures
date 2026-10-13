@@ -51,6 +51,10 @@ async def ensure_schema() -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_version"
             " INTEGER NOT NULL DEFAULT 0"
         ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS theme"
+            " VARCHAR(8) NOT NULL DEFAULT 'light'"
+        ))
 
     async with get_session_factory()() as session:
         await session.execute(

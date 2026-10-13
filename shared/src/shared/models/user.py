@@ -31,6 +31,7 @@ class UserOut(BaseModel):
     display_name: str | None = None
     avatar: str | None = None
     language: str = "en"
+    theme: str = "light"
     created_at: datetime
 
 
@@ -58,6 +59,7 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = None
     avatar: str | None = None
     language: str | None = None
+    theme: str | None = None
 
 
 class PasswordChange(BaseModel):

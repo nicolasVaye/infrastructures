@@ -16,9 +16,8 @@ from nicegui import app, ui
 from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
 from core.database import get_session
-from models.enums import UserRole
 from services.i18n import bind_format, t
-from views._common import page_header, safe_auto_refresh
+from views._common import safe_auto_refresh
 
 _client_icons = {
     'web': 'web',
@@ -56,20 +55,9 @@ def _ua_summary(ua: str | None) -> str | None:
     return ua[:40] + '…' if len(ua) > 40 else ua
 
 
-def _is_admin() -> bool:
-    return app.storage.user.get('role') == UserRole.ADMIN.value
-
-
 def content() -> None:
-    page_header(t('sessions.title'), t('sessions.subtitle'))
-
-    if not _is_admin():
-        with ui.column().classes('card w-full items-center gap-2 p-8'):
-            ui.icon('lock', size='2rem').classes('text-muted')
-            ui.label(t('sessions.admin_only')).classes('section-title')
-            ui.label(t('sessions.admin_only_desc')).classes('text-muted')
-        return
-
+    """Sessions tab of the /settings admin hub (no page header here:
+    the hub renders one; the admin guard also lives in the hub)."""
     selected_user = {'username': None}
 
     @ui.refreshable

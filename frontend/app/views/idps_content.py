@@ -14,7 +14,6 @@ from components.notifications import notify
 from core.database import get_session
 from models.enums import UserRole
 from services.i18n import t
-from views._common import page_header
 
 _ROLE_OPTIONS = [r.value for r in UserRole]
 
@@ -24,14 +23,7 @@ def _is_admin() -> bool:
 
 
 def content() -> None:
-    page_header(t('idps.title'), t('idps.subtitle'))
-
-    if not _is_admin():
-        with ui.column().classes('card w-full items-center gap-2 p-8'):
-            ui.icon('lock', size='2rem').classes('text-muted')
-            ui.label(t('idps.admin_only')).classes('section-title')
-            ui.label(t('idps.admin_only_desc')).classes('text-muted')
-        return
+    """Providers tab of the /settings admin hub (no page header; guard in hub)."""
 
     @ui.refreshable
     def idps_table() -> None:

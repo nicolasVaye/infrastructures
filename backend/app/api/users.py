@@ -47,7 +47,8 @@ def _out(user: UserRecord) -> UserOut:
         auth_provider=user.auth_provider,
         is_active=user.is_active, must_change_password=user.must_change_password,
         email=user.email, display_name=user.display_name, avatar=user.avatar,
-        language=user.language, created_at=user.created_at,
+        language=user.language,
+        theme=user.theme or "light", created_at=user.created_at,
     )
 
 
@@ -228,6 +229,10 @@ async def update_profile(body: ProfileUpdate, user: CurrentUser, session: DbSess
         user.language = body.language
         await record(session, AuditAction.LANGUAGE_CHANGED, user_id=user.id,
                      username=user.username, details=body.language)
+    if "theme" in provided and body.theme in ("light", "dark"):
+        user.theme = body.theme
+        await record(session, AuditAction.THEME_CHANGED, user_id=user.id,
+                     username=user.username, details=body.theme)
     await session.flush()
     await notify_event(session, "user_updated", user_id=user.id,
                       has_avatar=bool(user.avatar),

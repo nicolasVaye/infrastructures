@@ -45,7 +45,8 @@ def _user_out(user: UserRecord) -> UserOut:
         auth_provider=user.auth_provider,
         is_active=user.is_active, must_change_password=user.must_change_password,
         email=user.email, display_name=user.display_name, avatar=user.avatar,
-        language=user.language, created_at=user.created_at,
+        language=user.language,
+        theme=user.theme or "light", created_at=user.created_at,
     )
 
 

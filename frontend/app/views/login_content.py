@@ -99,6 +99,8 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
               negative='#ef4444', warning='#f59e0b', info='#3b82f6', accent='#e4e4e7')
 
     ui.add_head_html(f'<style>{_CSS}</style>')
+    # Per-user theme (set at the last successful login) also tints /login.
+    ui.dark_mode(app.storage.user.get('theme') == 'dark')
     ui.add_head_html('<link rel="stylesheet" href="/assets/css/icons.css">')
     ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
 

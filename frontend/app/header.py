@@ -52,16 +52,6 @@ def frame(title: str, version: str, get_logo_func=None):
         ui.label("").classes("pr-2")
         ui.label(title).classes('app-name')
         ui.space()
-        with i18n.bind_language_name(ui.dropdown_button('', icon='language').classes('mr-2 header-lang-btn').props('flat push no-icon-animation auto-close unelevated')):
-            with ui.element('div').classes('account-dropdown'):
-                i18n.bind(ui.label(i18n.t('language.label')).classes('account-name'), 'language.label')
-                ui.element('div').classes('account-separator')
-                for _code, _name in i18n.LANGUAGES.items():
-                    with ui.row().classes('account-menu-item').style('min-height: 44px;').on(
-                        'click', lambda _, c=_code: i18n.set_language(c)
-                    ):
-                        ui.label(_name)
-
         # Account button rendered as a refreshable widget: the account page
         # (this tab) and the profile-change detector (other tabs) can simply
         # call .refresh() to re-render name and avatar from the session
@@ -113,10 +103,10 @@ def frame(title: str, version: str, get_logo_func=None):
 
         ui.timer(2.0, _watch_profile)
 
-    header.style('background-color: #F8FAFD;')
+    header.style('background-color: var(--panel-bg);')
 
     # Sidebar nav
-    with ui.left_drawer().classes('text-black relative').style('background-color: #F8FAFD; transition: width 0.3s ease-in-out;').props('breakpoint=1024') as left_drawer:
+    with ui.left_drawer().classes('text-black relative').style('background-color: var(--panel-bg); transition: width 0.3s ease-in-out;').props('breakpoint=1024') as left_drawer:
 
         sidebar_labels = []
         nav_links = []
@@ -179,21 +169,23 @@ def frame(title: str, version: str, get_logo_func=None):
         nav_links.append({'link': print_demo_link, 'icon': print_demo_icon, 'patterns': ['/print-demo'], 'exact': False})
 
 
-        with ui.link('', '/jobs').classes('w-full no-underline text-black').style('border-radius: 2rem;') as jobs_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                jobs_icon = ui.icon('list_alt').classes('ml-5 text-2xl flex-shrink-0')
-                jobs_label = i18n.bind(ui.label('Jobs').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.jobs')
-                sidebar_labels.append(jobs_label)
-            sidebar_hints.append(sidebar_hint('nav.jobs'))
-        nav_links.append({'link': jobs_link, 'icon': jobs_icon, 'patterns': ['/jobs'], 'exact': False})
+        from models.enums import UserRole as _Role
+        if app.storage.user.get('role') == _Role.ADMIN.value:
+            with ui.link('', '/jobs').classes('w-full no-underline text-black').style('border-radius: 2rem;') as jobs_link:
+                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
+                    jobs_icon = ui.icon('list_alt').classes('ml-5 text-2xl flex-shrink-0')
+                    jobs_label = i18n.bind(ui.label('Jobs').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.jobs')
+                    sidebar_labels.append(jobs_label)
+                sidebar_hints.append(sidebar_hint('nav.jobs'))
+                nav_links.append({'link': jobs_link, 'icon': jobs_icon, 'patterns': ['/jobs'], 'exact': False})
 
-        with ui.link('', '/jobs/new').classes('w-full no-underline text-black').style('border-radius: 2rem;') as job_new_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                job_new_icon = ui.icon('play_circle').classes('ml-5 text-2xl flex-shrink-0')
-                job_new_label = i18n.bind(ui.label('Submit job').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.submit_job')
-                sidebar_labels.append(job_new_label)
-            sidebar_hints.append(sidebar_hint('nav.submit_job'))
-        nav_links.append({'link': job_new_link, 'icon': job_new_icon, 'patterns': ['/jobs/new'], 'exact': False})
+            with ui.link('', '/jobs/new').classes('w-full no-underline text-black').style('border-radius: 2rem;') as job_new_link:
+                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
+                    job_new_icon = ui.icon('play_circle').classes('ml-5 text-2xl flex-shrink-0')
+                    job_new_label = i18n.bind(ui.label('Submit job').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.submit_job')
+                    sidebar_labels.append(job_new_label)
+                sidebar_hints.append(sidebar_hint('nav.submit_job'))
+                nav_links.append({'link': job_new_link, 'icon': job_new_icon, 'patterns': ['/jobs/new'], 'exact': False})
 
 
         ui.separator()
