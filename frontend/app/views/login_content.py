@@ -98,6 +98,16 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
     from services import theme as theme_service
     theme_service.apply(theme_service.current())
 
+    # Full-screen datacenter background behind the login card.
+    # (A fixed, non-interactive overlay div: works regardless of how the
+    # page body is styled by the theme.)
+    ui.html(
+        '<div style="position:fixed;inset:0;z-index:-1;'
+        'background-image:url(\'/assets/images/login_bg.svg\');'
+        'background-size:cover;background-position:center;'
+        'background-color:#0b1020;"></div>',
+        sanitize=False,
+    )
     ui.add_head_html(f'<style>{_CSS}</style>')
     ui.add_head_html('<link rel="stylesheet" href="/assets/css/icons.css">')
     ui.add_head_html('<meta name="viewport" content="width=device-width, initial-scale=1.0">')
@@ -146,7 +156,7 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
         # Logo
         ui.html(
             '<div style="width:15rem;height:7rem;'
-            'background-image:url(\'/assets/images/logo.png\');'
+            'background-image:url(\'/assets/images/logo.svg\');'
             'background-size:contain;background-repeat:no-repeat;'
             'background-position:center;margin-bottom:1rem;"></div>',
             sanitize=False,

@@ -42,6 +42,44 @@ _ACTION_META: dict[str, tuple[str, str]] = {
 
 _DEFAULT_META = ('history', 'badge badge-default')
 
+# Thematic grouping of audit actions for the filter menu:
+# i18n group key -> ordered action values. Every AuditAction must appear in
+# exactly one group so the flat enum list and the grouped view stay in sync.
+_AUDIT_THEMES: list[tuple[str, tuple[str, ...]]] = [
+    ('audit.group.sessions', (
+        AuditAction.LOGIN.value,
+        AuditAction.LOGIN_FAILED.value,
+        AuditAction.OIDC_LOGIN.value,
+        AuditAction.LOGOUT.value,
+        AuditAction.SESSION_REVOKED.value,
+    )),
+    ('audit.group.accounts', (
+        AuditAction.USER_CREATED.value,
+        AuditAction.USER_DELETED.value,
+        AuditAction.USER_ACTIVATED.value,
+        AuditAction.USER_DEACTIVATED.value,
+        AuditAction.PASSWORD_CHANGED.value,
+        AuditAction.PASSWORD_RESET.value,
+    )),
+    ('audit.group.roles', (
+        AuditAction.ROLE_CHANGED.value,
+    )),
+    ('audit.group.preferences', (
+        AuditAction.PROFILE_UPDATED.value,
+        AuditAction.LANGUAGE_CHANGED.value,
+        AuditAction.THEME_CHANGED.value,
+    )),
+    ('audit.group.idps', (
+        AuditAction.IDP_CREATED.value,
+        AuditAction.IDP_UPDATED.value,
+        AuditAction.IDP_DELETED.value,
+    )),
+    ('audit.group.jobs', (
+        AuditAction.JOB_SUBMITTED.value,
+        AuditAction.JOB_CANCELLED.value,
+    )),
+]
+
 # How many rows the list shows at once.
 _LIMIT = 200
 
@@ -142,17 +180,9 @@ def content() -> None:
         audit_table.refresh()
 
     # Toolbar: action filter, refresh, clear.
-    # Multi-select dropdown: each entry shows the same icon + colour as the
-    # corresponding badge in the activity list, with a checkbox to build the
-    # selection. The menu stays open so several actions can be ticked; the
-    # table refreshes live on every change.
-    def _filter_meta(action: str) -> tuple[str, str, str]:
-        """(icon, badge class, label) for the filter button and its menu."""
-        if not action:
-            return ('filter_list', 'badge badge-default', t('audit.filter.all'))
-        icon, badge_cls = _ACTION_META.get(action, _DEFAULT_META)
-        return (icon, badge_cls, _action_label(action))
-
+    # Multi-select dropdown grouped by theme; the menu stays open so
+    # several actions can be ticked; the table refreshes live on every
+    # change.
     with ui.row().classes('w-full items-center justify-between gap-2 mb-3 no-wrap'):
         with ui.element('div').classes('flex-1').style('max-width: 280px;'):
             filter_btn = ui.button(on_click=lambda: filter_menu.open()) \
@@ -174,13 +204,15 @@ def content() -> None:
 
             with ui.menu() as filter_menu:
                 filter_menu.props('no-route-dismiss')
+                filter_menu.classes('audit-filter-menu')
 
                 @ui.refreshable
                 def _filter_items() -> None:
                     """Menu body: rebuilt on every toggle so the checkboxes
                     (and the highlight of the current selection) stay in
-                    sync with state['actions']."""
-                    # lambda so _select_all (defined below) resolves at click
+                    sync with state['actions']. Actions are grouped by
+                    theme; each theme header carries a tri-state checkbox
+                    that toggles the whole group."""
                     with ui.element('button').classes('audit-filter-item').on(
                         'click', lambda: _select_all()
                     ):
@@ -190,29 +222,52 @@ def content() -> None:
                         ui.icon('check_box_outline_blank' if state['actions']
                                 else 'check_box', size='0.9rem').classes('ml-auto text-muted')
 
-                    ui.separator().classes('my-1')
+                    def _toggle(av: str) -> None:
+                        if av in state['actions']:
+                            state['actions'].discard(av)
+                        else:
+                            state['actions'].add(av)
+                        _render_filter_btn()
+                        _filter_items.refresh()
+                        audit_table.refresh()
 
-                    for a in AuditAction:
-                        action_value = a.value
-                        icon, badge_cls, label = _filter_meta(action_value)
+                    for group_key, group_actions in _AUDIT_THEMES:
+                        selected_in_group = sum(1 for a in group_actions
+                                                if a in state['actions'])
+                        if selected_in_group == 0:
+                            group_icon = 'check_box_outline_blank'
+                        elif selected_in_group == len(group_actions):
+                            group_icon = 'check_box'
+                        else:
+                            group_icon = 'indeterminate_check_box'
 
-                        def _toggle(av: str = action_value) -> None:
-                            if av in state['actions']:
-                                state['actions'].discard(av)
+                        def _toggle_group(actions: tuple[str, ...] = group_actions,
+                                          sel: int = selected_in_group) -> None:
+                            if sel == len(actions):
+                                state['actions'].difference_update(actions)
                             else:
-                                state['actions'].add(av)
+                                state['actions'].update(actions)
                             _render_filter_btn()
                             _filter_items.refresh()
                             audit_table.refresh()
 
-                        with ui.element('button').classes('audit-filter-item').on('click', _toggle):
-                            with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
-                                ui.icon(icon, size='0.9rem')
-                                ui.label(label).classes('text-sm')
-                            with ui.element('span').classes('ml-auto'):
-                                ui.icon('check_box' if action_value in state['actions']
-                                        else 'check_box_outline_blank', size='0.9rem') \
-                                    .classes('text-muted')
+                        with ui.element('button').classes('audit-filter-item audit-filter-group') \
+                                .on('click', _toggle_group):
+                            ui.label(t(group_key)).classes('text-sm font-semibold')
+                            ui.icon(group_icon, size='0.9rem').classes('ml-auto text-muted')
+
+                        for action_value in group_actions:
+                            icon, badge_cls = _ACTION_META.get(action_value, _DEFAULT_META)
+
+                            with ui.element('button').classes('audit-filter-item audit-filter-sub') \
+                                    .on('click', lambda av=action_value: _toggle(av)):
+                                with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
+                                    ui.icon(icon, size='0.9rem')
+                                    ui.label(_action_label(action_value)).classes('text-sm')
+                                with ui.element('span').classes('ml-auto'):
+                                    ui.icon('check_box' if action_value in state['actions']
+                                            else 'check_box_outline_blank', size='0.9rem') \
+                                        .classes('text-muted')
                 _filter_items()
 
                 def _select_all() -> None:

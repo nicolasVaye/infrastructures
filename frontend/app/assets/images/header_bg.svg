@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="200" viewBox="0 0 1200 200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <pattern id="traces" width="120" height="100" patternUnits="userSpaceOnUse">
+      <g fill="none" stroke="#808080" stroke-opacity="0.12" stroke-width="1.5">
+        <path d="M 10 10 H 50 V 50 H 110"/>
+        <path d="M 10 90 H 80 V 60 H 110"/>
+        <path d="M 60 0 V 20 H 100 V 100"/>
+      </g>
+      <g fill="#808080" fill-opacity="0.15">
+        <circle cx="50" cy="50" r="2.5"/>
+        <circle cx="110" cy="10" r="2.5"/>
+        <circle cx="110" cy="90" r="2.5"/>
+        <circle cx="100" cy="100" r="2.5"/>
+      </g>
+    </pattern>
+  </defs>
+  <rect width="1200" height="200" fill="url(#traces)"/>
+</svg>

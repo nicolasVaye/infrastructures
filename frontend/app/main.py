@@ -196,7 +196,7 @@ def with_base_layout(route_handler):
         ui.add_head_html(_LOGOUT_WATCHER_JS, shared=True)
 
         # Preload avoids a layout-shift flash when the sidebar logo first renders
-        ui.add_head_html('<link rel="preload" href="/assets/images/logo.png" as="image">')
+        ui.add_head_html('<link rel="preload" href="/assets/images/logo.svg" as="image">')
 
         if 'sidebar-collapsed' not in app.storage.user:
             app.storage.user['sidebar-collapsed'] = False

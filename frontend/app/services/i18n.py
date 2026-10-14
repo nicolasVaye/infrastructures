@@ -221,6 +221,15 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'audit.action.idp_created':       {'en': 'Added provider', 'de': 'Anbieter hinzugefügt', 'fr': "Fournisseur ajouté"},
     'audit.action.idp_updated':       {'en': 'Updated provider', 'de': 'Anbieter aktualisiert', 'fr': "Fournisseur mis à jour"},
     'audit.action.idp_deleted':       {'en': 'Removed provider', 'de': 'Anbieter entfernt', 'fr': "Fournisseur supprimé"},
+    'audit.action.theme_changed':     {'en': 'Changed theme', 'de': 'Design geändert', 'fr': "Thème changé"},
+
+    # Audit filter groups
+    'audit.group.sessions':     {'en': 'Sign-in / sessions', 'de': 'Anmeldung / Sitzungen', 'fr': "Connexion / sessions"},
+    'audit.group.accounts':     {'en': 'Accounts & passwords', 'de': 'Konten & Passwörter', 'fr': "Comptes & mots de passe"},
+    'audit.group.roles':        {'en': 'Roles', 'de': 'Rollen', 'fr': "Rôles"},
+    'audit.group.preferences':  {'en': 'User preferences', 'de': 'Benutzereinstellungen', 'fr': "Préférences utilisateur"},
+    'audit.group.idps':         {'en': 'Identity providers', 'de': 'Identitätsanbieter', 'fr': "Fournisseurs d'identité"},
+    'audit.group.jobs':         {'en': 'Jobs', 'de': 'Jobs', 'fr': "Jobs"},
 
     # Header navigation (jobs / sessions / providers entries)
     'nav.jobs':           {'en': 'Jobs', 'de': 'Jobs', 'fr': "Jobs"},

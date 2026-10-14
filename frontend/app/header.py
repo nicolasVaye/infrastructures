@@ -25,11 +25,10 @@ def frame(title: str, version: str, get_logo_func=None):
     # persists collapsed state in user session storage
     async def toggle_sidebar():
         app.storage.user['sidebar-collapsed'] = not app.storage.user['sidebar-collapsed']
+        collapsed = app.storage.user['sidebar-collapsed']
 
-        if app.storage.user['sidebar-collapsed']:
+        if collapsed:
             left_drawer.props("width=240")
-            corps.text = i18n.t('action.collapse')
-            corps.icon = "chevron_left"
             await ui.run_javascript('new Promise(resolve => setTimeout(resolve, 50))')
             for label in sidebar_labels:
                 label.classes(remove='collapsed', add='expanded')
@@ -42,13 +41,14 @@ def frame(title: str, version: str, get_logo_func=None):
                 tip.set_visibility(True)
             await ui.run_javascript('new Promise(resolve => setTimeout(resolve, 50))')
             left_drawer.props("width=100")
-            corps.text = ""
-            corps.icon = "chevron_right"
+        # The vertical handle sits on the sidebar's right border; its chevron
+        # reflects the resulting state (wide -> collapse to the left).
+        handle_icon.name = 'chevron_left' if collapsed else 'chevron_right'
 
     # Header toolbar
     with ui.header().classes(replace='row items-center h-20 justify-start') as header:
         ui.label("").classes('pr-4 md:pr-8')
-        ui.html('<div style="width: 4rem; height: 4rem; background-image: url(\'/assets/images/logo.png\'); background-size: contain; background-repeat: no-repeat; background-position: center;"></div>', sanitize=False)
+        ui.html('<div style="width: 4rem; height: 4rem; background-image: url(\'/assets/images/logo.svg\'); background-size: contain; background-repeat: no-repeat; background-position: center;"></div>', sanitize=False)
         ui.label("").classes("pr-2")
         ui.label(title).classes('app-name')
         ui.space()
@@ -103,10 +103,21 @@ def frame(title: str, version: str, get_logo_func=None):
 
         ui.timer(2.0, _watch_profile)
 
-    header.style('background-color: var(--panel-bg);')
+    # Panel colour with a subtle network-circuit texture on the header,
+    # and a bottom border that visually separates it from the sub pages.
+    header.style(
+        'background-color: var(--panel-bg);'
+        "background-image: url('/assets/images/header_bg.svg');"
+        'background-size: cover; background-position: center;'
+        'border-bottom: 1px solid var(--border);'
+    )
 
     # Sidebar nav
-    with ui.left_drawer().classes('text-black relative').style('background-color: var(--panel-bg); transition: width 0.3s ease-in-out;').props('breakpoint=1024') as left_drawer:
+    with ui.left_drawer().classes('text-black relative').style(
+        'background-color: var(--panel-bg);'
+        'border-right: 1px solid var(--border);'
+        'transition: width 0.3s ease-in-out;'
+    ).props('breakpoint=1024') as left_drawer:
 
         sidebar_labels = []
         nav_links = []
@@ -201,23 +212,28 @@ def frame(title: str, version: str, get_logo_func=None):
 
         ui.separator()
 
-        # Admin-only App Settings hub (users, sessions, audit, providers…),
-        # below the separator — the role comes from the login snapshot in the
-        # shared session storage (no /auth/me round-trip in the header).
-        from models.enums import UserRole
-        if app.storage.user.get('role') == UserRole.ADMIN.value:
-            with ui.link('', '/settings').classes('w-full no-underline text-black').style('border-radius: 2rem;') as settings_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap') as settings_link_row:
-                    settings_icon = ui.icon('tune').classes('ml-5 text-2xl flex-shrink-0')
-                    settings_label = i18n.bind(ui.label('App Settings').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'appsettings.title')
-                    sidebar_labels.append(settings_label)
-                sidebar_hints.append(sidebar_hint('appsettings.title'))
-            nav_links.append({'link': settings_link, 'icon': settings_icon, 'patterns': ['/settings'], 'exact': False})
-
-        with ui.column().classes('absolute bottom-2 right-4 items-end gap-0'):
-            corps = ui.button(i18n.t('action.collapse'), icon='chevron_left').classes('transition-all duration-300').props('flat').on('click', lambda: toggle_sidebar())
+        # App Settings hub is pinned at the BOTTOM of the nav bar (with the
+        # version label), so it keeps its own dedicated spot whatever the
+        # number of nav links above. Admin only — role comes from the login
+        # snapshot in the shared session storage.
+        from models.enums import UserRole as _RoleBottom
+        with ui.column().classes('absolute bottom-2 left-0 right-4 items-stretch gap-0 px-2') as sidebar_bottom:
+            if app.storage.user.get('role') == _RoleBottom.ADMIN.value:
+                with ui.link('', '/settings').classes('w-full no-underline text-black').style('border-radius: 2rem;') as settings_link:
+                    with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
+                        settings_icon = ui.icon('tune').classes('ml-5 text-2xl flex-shrink-0')
+                        settings_label = i18n.bind(ui.label('App Settings').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'appsettings.title')
+                        sidebar_labels.append(settings_label)
+                    sidebar_hints.append(sidebar_hint('appsettings.title'))
+                nav_links.append({'link': settings_link, 'icon': settings_icon, 'patterns': ['/settings'], 'exact': False})
             version_label = ui.label(version).classes('text-xs text-muted sidebar-label mr-2')
             sidebar_labels.append(version_label)
+
+        # Vertical collapse handle sitting on the sidebar's right border:
+        # a slim clickable tab with a chevron that flips with the state.
+        # Replaces the old bottom "collapse" button.
+        with ui.element('div').classes('sidebar-collapse-handle').on('click', lambda: toggle_sidebar()):
+            handle_icon = ui.icon('chevron_left').classes('sidebar-collapse-handle-icon')
 
         def apply_highlight(active_item) -> None:
             for item in nav_links:
@@ -249,16 +265,14 @@ def frame(title: str, version: str, get_logo_func=None):
     # sync drawer width and label visibility to the persisted state
     if app.storage.user['sidebar-collapsed']:
         left_drawer.props("width=240")
-        corps.text = i18n.t('action.collapse')
-        corps.icon = "chevron_left"
+        handle_icon.name = 'chevron_left'
         for label in sidebar_labels:
             label.classes(add='expanded')
         for tip in sidebar_hints:
             tip.set_visibility(False)
     else:
         left_drawer.props("width=100")
-        corps.text = ""
-        corps.icon = "chevron_right"
+        handle_icon.name = 'chevron_right'
         for label in sidebar_labels:
             label.classes(add='collapsed')
         for tip in sidebar_hints:

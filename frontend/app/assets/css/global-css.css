@@ -483,13 +483,15 @@ body { font-size: var(--app-font-size) !important; }
 
 /* App-specific styles */
 
-/* Header account / profile button */
+/* Header account / profile button: slightly translucent panel background
+   and a stronger border so it stays readable over the header texture. */
 .header-account-btn {
-  background: transparent !important;
+  background: color-mix(in srgb, var(--panel-bg) 72%, transparent) !important;
   color: var(--muted-fg) !important;
   border-radius: var(--radius) !important;
   transition: background var(--transition), color var(--transition) !important;
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--input-border) !important;
+  padding: 4px 10px !important;
 }
 .header-account-btn:hover,
 .header-account-btn:focus {
@@ -504,6 +506,38 @@ body { font-size: var(--app-font-size) !important; }
 }
 .header-account-btn:hover .q-btn__content .q-icon {
   color: var(--fg) !important;
+}
+
+/* Vertical collapse handle on the sidebar's right border: a slim clickable
+   tab whose chevron flips with the collapsed state. */
+.sidebar-collapse-handle {
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: var(--muted-fg);
+  z-index: 10;
+  transition: background var(--transition), color var(--transition), height var(--transition);
+}
+.sidebar-collapse-handle:hover,
+.sidebar-collapse-handle:active {
+  background: var(--secondary);
+  color: var(--fg);
+  height: 120px;
+}
+.sidebar-collapse-handle-icon {
+  font-size: 14px !important;
+  transition: transform 0.3s ease-in-out;
 }
 
 .account-dropdown {
@@ -1422,6 +1456,19 @@ button.audit-filter-item {
 }
 button.audit-filter-item:hover {
     background: var(--faint, #f4f4f5);
+}
+/* Theme header row inside the audit filter menu */
+button.audit-filter-item.audit-filter-group {
+    font-weight: 600;
+}
+/* Indented action rows under their theme header */
+button.audit-filter-item.audit-filter-sub {
+    padding-left: 30px;
+}
+/* Keep the long grouped menu scrollable instead of overflowing the viewport */
+.audit-filter-menu {
+    max-height: 60vh;
+    overflow-y: auto;
 }
 
 

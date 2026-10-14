@@ -2,17 +2,9 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
-build/
 .venv/
 venv/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# NOTE: uv.lock files (backend + frontend) are COMMITTED on purpose — they pin
-# the full dependency tree and make every build reproducible (see README,
-# section "Dépendances"). Never add them back here.
+uv.lock
 
 # Data / secrets
 .env
