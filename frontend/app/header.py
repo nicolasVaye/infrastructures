@@ -289,7 +289,7 @@ def frame(title: str, version: str, get_logo_func=None):
     _sidebar_width = max(100, min(400, int(app.storage.user.get('sidebar-width', 240) or 240)))
     _collapsed = _sidebar_width < 180
     left_drawer.props(f'width={_sidebar_width}')
-    handle.style(f'left: {_sidebar_width - 7}px;')
+    handle.style(f'left: {_sidebar_width - 5}px;')
     handle_icon.name = 'chevron_right' if _collapsed else 'chevron_left'
     for label in sidebar_labels:
         label.classes(add='collapsed' if _collapsed else 'expanded')

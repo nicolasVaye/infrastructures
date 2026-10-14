@@ -372,6 +372,12 @@ def _users_tab(current_username: str) -> None:
             safe_auto_refresh(user_table.refresh)()
 
     ui.timer(1.0, _on_event)
+    # Short fallback poll: covers the cases SSE cannot signal — a user who
+    # just closes their browser (no logout event is ever emitted; the
+    # session lingers until its TTL) or a stream briefly reconnecting when
+    # the event went out. 15s is cheap (one /sessions GET) and keeps the
+    # online badges honest without waiting for a manual refresh.
+    ui.timer(15.0, safe_auto_refresh(user_table.refresh))
 
 
 # ================================================================== roles tab

@@ -276,7 +276,7 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     var handle = get('.sidebar-collapse-handle');
     var drawer = get('.q-drawer--left');
     if (handle) {
-      handle.style.left = (w - 7) + 'px';
+      handle.style.left = (w - 5) + 'px';
       var icon = handle.querySelector('.sidebar-collapse-handle-icon');
       if (icon) { icon.textContent = (w >= WIDE) ? 'chevron_left' : 'chevron_right'; }
     }
@@ -304,7 +304,7 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     var handle = get('.sidebar-collapse-handle');
     if (drawer && handle) {
       var w = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
-      handle.style.left = (w - 7) + 'px';
+      handle.style.left = (w - 5) + 'px';
       document.body.classList.toggle('sidebar-wide', w >= WIDE);
       clearInterval(initTimer);
     } else if (++tries > 150) { clearInterval(initTimer); }
