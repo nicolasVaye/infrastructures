@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.core.db import RoleRecord, SessionRecord, UserRecord, utcnow
 from app.core.security import AdminUser, CurrentUser, DbSession, hash_password
@@ -181,10 +181,15 @@ async def delete_user(user_id: int, admin: AdminUser, session: DbSession) -> Non
         raise HTTPException(404, "User not found.")
     if user.username == _PROTECTED_USERNAME:
         raise HTTPException(400, "The default admin cannot be deleted.")
-    for s in (await session.scalars(
-        select(SessionRecord).where(SessionRecord.user_id == user.id)
-    )).all():
-        s.revoked_at = utcnow()
+    # Revoke the user's sessions BEFORE deleting the row: SQLAlchemy cascades
+    # the delete (sessions.user_id has no ON DELETE SET NULL, it would fail
+    # the NOT NULL constraint), and a revocation update on a deleted-parent
+    # row is emitted as user_id=NULL. Deleting the sessions outright is the
+    # correct move — they die with the account (the audit log keeps the
+    # history).
+    await session.execute(
+        delete(SessionRecord).where(SessionRecord.user_id == user.id)
+    )
     await session.delete(user)
     await record(session, AuditAction.USER_DELETED, user_id=admin.id,
                  username=admin.username, target=user.username)

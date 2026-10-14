@@ -393,8 +393,32 @@ def content() -> None:
                   on_click=lambda: ui.navigate.to('/jobs/new')).props('outline no-caps')
 
     schedules_panel()
+    # A 5s full-board refresh would close any open job-details dialog (the
+    # dialog lives inside the refreshable). Track open dialogs globally and
+    # skip the refresh while one is open; the SSE listener still refreshes
+    # on real job events (and the counter check runs even then).
+    open_dialogs = {'count': 0}
+
+    def _guarded_refresh() -> None:
+        if open_dialogs['count'] > 0:
+            return
+        safe_auto_refresh(board.refresh)()
+
+    original_open, original_close = ui.dialog.open, ui.dialog.close
+
+    def _tracked_open(self, *args, **kwargs):
+        open_dialogs['count'] += 1
+        return original_open(self, *args, **kwargs)
+
+    def _tracked_close(self, *args, **kwargs):
+        result = original_close(self, *args, **kwargs)
+        open_dialogs['count'] = max(0, open_dialogs['count'] - 1)
+        return result
+
+    ui.dialog.open, ui.dialog.close = _tracked_open, _tracked_close
+
     board()
-    ui.timer(5.0, safe_auto_refresh(board.refresh))
+    ui.timer(5.0, _guarded_refresh)
 
     # Live push: the SSE listener (see services/events_client.py) bumps this
     # client-storage counter on every job_updated event — refresh the board
@@ -405,6 +429,6 @@ def content() -> None:
         counter = app.storage.client.get('jobs_refresh_counter', 0)
         if counter != seen['counter']:
             seen['counter'] = counter
-            safe_auto_refresh(board.refresh)()
+            _guarded_refresh()
 
     ui.timer(1.0, _on_event)

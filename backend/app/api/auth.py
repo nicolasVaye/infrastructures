@@ -199,6 +199,13 @@ async def oidc_callback(idp_id: int, body: OIDCCallbackIn, request: Request,
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, _INACTIVE_MESSAGE)
 
+    # A federated account has no local password: the flag can only be a legacy
+    # leftover (rows created before the OIDC path set it to False). Clear it
+    # on every federated login so the forced change-password page — which
+    # would be a dead end for these accounts — never triggers.
+    if user.must_change_password:
+        user.must_change_password = False
+
     client_label = request.headers.get("X-Client-Label", "oidc")[:32]
     session_record = await create_session_record(
         session, user,

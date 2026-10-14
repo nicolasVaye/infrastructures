@@ -76,7 +76,9 @@ async def oidc_callback(request: Request, code: str = '', state: str = '',
             'user_id': user['id'],
             'username': user['username'],
             'role': user['role'],
-            'must_change_password': user['must_change_password'],
+            # Federated accounts never go through the forced change-password
+            # flow — the password lives in the IdP, not here.
+            'must_change_password': False,
             'auth_provider': user.get('auth_provider', 'oidc'),
             'language': user['language'],
             'email': user.get('email'),
