@@ -1,12 +1,13 @@
 # Frontend: NiceGUI app — pure REST client of the backend (stateless).
 FROM zauberzeug/nicegui:latest
 
-# Security: the base image bundles whatever NiceGUI version was current at
-# build time. Force at least 3.12.0, which patches:
-#   - GHSA: ui.restructured_text() local file read (file_insertion/raw directives)
-#   - GHSA-9ffm-fxg3-xrhh bypass: upload filename backslash sanitization
-#   - unauthenticated log amplification via /_nicegui/ static asset routes
-RUN pip install --upgrade python-engineio python-socketio "nicegui[highcharts]>=3.12.0,<4"
+# Pin the NiceGUI version actually shipped in the image: reproducible builds.
+# The base image is `latest`, so its bundled version floats — this pip install
+# is what really decides the version at runtime. Bump the pin here AND in
+# frontend/pyproject.toml together (>=3.12.0 also covers the Dependabot
+# advisories: restructured_text file read, upload filename sanitization,
+# /_nicegui/ static-route log amplification).
+RUN pip install --upgrade python-engineio python-socketio "nicegui[highcharts]==3.18.0"
 
 WORKDIR /app
 

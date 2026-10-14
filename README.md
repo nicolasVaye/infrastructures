@@ -128,3 +128,30 @@ Modifier un champ = une seule modification, les deux projets voient le changemen
 ```bash
 cd backend && uv run pytest        # tests API (login, rôles, sessions, jobs) + worker
 ```
+
+## Dépendances : versions maîtrisées et reproductibles
+
+**Principe** : le code fixe les versions (`pyproject.toml`), le lock garantit la
+reproductibilité totale (arbre de dépendances complet, versions transitives incluses).
+
+- **Backend / workers / shared** : `uv`. Le `backend/uv.lock` est (à être) commité ;
+  le `Dockerfile` le copie quand il est présent, et `uv sync` installe alors exactement
+  le même arbre à chaque build. Sans lock, uv résout depuis `pyproject.toml` à chaque
+  build (marche, mais non reproductible).
+- **Frontend** : l'image de base `zauberzeug/nicegui:latest` flotte — la version de
+  NiceGUI **réellement embarquée** est celle du `pip install` épinglé dans
+  `frontend/Dockerfile` (`nicegui[highcharts]==3.18.0`). Bump à faire au même
+  endroit que dans `frontend/pyproject.toml`.
+
+### Commandes utiles (voir `Makefile`, `make help`)
+
+```bash
+make outdated   # upgrades disponibles pour les paquets installés (frontend + backend)
+make versions   # versions réellement en place dans les conteneurs
+make lock       # (re)génère backend/uv.lock depuis pyproject.toml → à commiter
+make upgrade    # uv lock --upgrade : refresh du lock vers les dernières versions compatibles
+```
+
+Workflow de montée de version : `make upgrade` (ou bump du pin frontend) →
+`docker compose --profile keycloak up -d --build` → tests → commit du lock.
+Dependabot couvre le côté sécurité (alertes sur les ranges `pyproject`).
