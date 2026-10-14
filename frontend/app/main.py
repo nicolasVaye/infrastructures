@@ -100,7 +100,6 @@ from views import (
     audit_content,
     sessions_content,
     jobs_content,
-    job_submit_content,
     idps_content,
     print_demo_content,
 )
@@ -235,7 +234,6 @@ def root():
     '/settings'   : settings,
     '/account'    : account,
     '/jobs'       : jobs_list,
-    '/jobs/new'   : jobs_new,
     })
 
 
@@ -298,12 +296,6 @@ def jobs_list():
     if _admin_guard():
         return
     _localized(jobs_content.content)
-
-
-def jobs_new():
-    if _admin_guard():
-        return
-    _localized(job_submit_content.content)
 
 def production_search(searchFilter):
     _localized(production_content.content, searchFilter=searchFilter)

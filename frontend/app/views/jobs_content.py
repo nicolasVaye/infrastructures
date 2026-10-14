@@ -402,15 +402,77 @@ def content() -> None:
                             .props('flat dense round color=negative') \
                             .tooltip(t('jobs.tip.delete'))
 
+    # -- Submit job dialog (admin): replaces the old /jobs/new page ----------
+    _PARAMS_EXAMPLES = {'demo.sleep': '{"seconds": 5}',
+                        'maintenance.cleanup_sessions': '{"keep_days": 7}'}
+
+    def _open_submit_dialog() -> None:
+        """Modal form: job type, JSON params, priority — same style as the
+        users 'create user' dialog. Lives OUTSIDE any refreshable, so a board
+        refresh can never destroy it."""
+        with ui.dialog() as dialog, ui.column().classes('login-card gap-3') \
+                .style('min-width: 480px; max-width: 640px;'):
+            ui.label(t('jobs.submit_new')).classes('section-title')
+
+            type_select = ui.select(
+                {jt: _type_name(jt) for jt in _TYPE_LABEL},
+                value='demo.sleep', label=t('jobsubmit.job_type'),
+            ).classes('w-full')
+
+            desc_key, params_key = _TYPE_DESC.get(type_select.value, (None, None))
+
+            def _update_example(e) -> None:
+                params_input.set_value(_PARAMS_EXAMPLES.get(e.value, '{}'))
+                # swap the inline description + params docs on type change
+                desc_el.set_text(t(_TYPE_DESC.get(e.value, (None, None))[0])
+                                 if _TYPE_DESC.get(e.value, (None, None))[0] else '')
+                params_el.set_text(t(_TYPE_DESC.get(e.value, (None, None))[1])
+                                   if _TYPE_DESC.get(e.value, (None, None))[1] else '')
+
+            type_select.on_value_change(_update_example)
+
+            ui.label(t('jobsubmit.params')).classes('field-label mb-0')
+            params_input = ui.textarea(
+                value=_PARAMS_EXAMPLES.get(type_select.value, '{}'),
+            ).classes('w-full').style('font-family: monospace;')
+            desc_el = ui.label(t(desc_key) if desc_key else '').classes('text-xs text-muted')
+            params_el = ui.label(t(params_key) if params_key else '').classes('text-xs text-faint')
+
+            priority = ui.number(
+                label=t('jobsubmit.priority'), value=5, min=0, max=9, precision=0,
+            ).classes('w-full')
+            ui.label(t('jobsubmit.priority_hint')).classes('text-xs text-muted')
+
+            def _submit() -> None:
+                try:
+                    params = json.loads(params_input.value or '{}')
+                except ValueError:
+                    notify(t('jobs.invalid_json'), type='negative')
+                    return
+                with get_session() as api:
+                    job = api.post('/jobs', json={'job_type': type_select.value,
+                                                  'params': params,
+                                                  'priority': int(priority.value or 0)})
+                notify(t('jobsubmit.queued_msg').format(id=job['id'], status=job['status']),
+                       type='positive')
+                dialog.close()
+                _guarded_refresh()
+
+            with ui.row().classes('w-full justify-end gap-2'):
+                ui.button(t('common.cancel'), color='white', on_click=dialog.close) \
+                    .classes('button button-secondary')
+                ui.button(t('jobsubmit.submit'), icon='play_arrow', on_click=_submit) \
+                    .classes('button button-primary')
+        dialog.open()
+
     with ui.row().classes('w-full justify-end'):
         ui.button(t('jobs.submit_new'), icon='add',
-                  on_click=lambda: ui.navigate.to('/jobs/new')).props('outline no-caps')
+                  on_click=_open_submit_dialog).props('outline no-caps')
 
     schedules_panel()
-    # A 5s full-board refresh would close any open job-details dialog (the
-    # dialog lives inside the refreshable). Track open dialogs globally and
-    # skip the refresh while one is open; the SSE listener still refreshes
-    # on real job events (and the counter check runs even then).
+    # A refresh while a job-details dialog is open would close it (the dialog
+    # lives inside the refreshable). Track open dialogs globally and skip the
+    # refresh while one is open; the next event after it closes catches up.
     open_dialogs = {'count': 0}
 
     def _guarded_refresh() -> None:
@@ -432,17 +494,27 @@ def content() -> None:
     ui.dialog.open, ui.dialog.close = _tracked_open, _tracked_close
 
     board()
-    ui.timer(5.0, _guarded_refresh)
 
-    # Live push: the SSE listener (see services/events_client.py) bumps this
-    # client-storage counter on every job_updated event — refresh the board
-    # immediately instead of waiting for the 5s poll.
-    seen = {'counter': app.storage.client.get('jobs_refresh_counter', 0)}
+    # NO polling timer: the board refreshes only when a real change happens.
+    # The SSE listener (see services/events_client.py) bumps the
+    # 'jobs_refresh_counter' on every job_updated event (submitted, claimed,
+    # started, finished, cancelled — from this tab AND from other users,
+    # workers or backend replicas) and 'schedules_refresh_counter' when a
+    # schedule is created/edited/deleted. The 1s timer below is a cheap
+    # counter check that only rebuilds on change — tooltips and dialogs are
+    # never disturbed by periodic redraws.
+    seen = {'jobs': app.storage.client.get('jobs_refresh_counter', 0),
+            'schedules': app.storage.client.get('schedules_refresh_counter', 0)}
 
     def _on_event() -> None:
-        counter = app.storage.client.get('jobs_refresh_counter', 0)
-        if counter != seen['counter']:
-            seen['counter'] = counter
+        jobs = app.storage.client.get('jobs_refresh_counter', 0)
+        schedules = app.storage.client.get('schedules_refresh_counter', 0)
+        if schedules != seen['schedules']:
+            seen['schedules'] = schedules
+            schedules_panel.refresh()
+        if jobs != seen['jobs']:
+            seen['jobs'] = jobs
             _guarded_refresh()
 
     ui.timer(1.0, _on_event)
+

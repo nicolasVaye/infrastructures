@@ -102,6 +102,7 @@ async def create_schedule(body: ScheduleCreate, admin: AdminUser, session: DbSes
     )
     session.add(schedule)
     await session.flush()
+    await notify_event(session, "schedule_updated", schedule_id=schedule.id)
     return ScheduleOut.model_validate(schedule)
 
 
@@ -124,6 +125,7 @@ async def update_schedule(schedule_id: int, body: ScheduleUpdate,
     if body.enabled is not None:
         schedule.enabled = body.enabled
     await session.flush()
+    await notify_event(session, "schedule_updated", schedule_id=schedule.id)
     return ScheduleOut.model_validate(schedule)
 
 
@@ -133,3 +135,4 @@ async def delete_schedule(schedule_id: int, admin: AdminUser, session: DbSession
     if schedule is None:
         raise HTTPException(404, "Schedule not found")
     await session.delete(schedule)
+    await notify_event(session, "schedule_updated", schedule_id=schedule_id)

@@ -68,6 +68,12 @@ def handle_event(evt: dict) -> None:
         counter = app.storage.client.get('jobs_refresh_counter', 0)
         app.storage.client['jobs_refresh_counter'] = counter + 1
 
+    elif etype == 'schedule_updated':
+        # A schedule was created/edited/deleted (possibly by another admin):
+        # let the /jobs page rebuild its schedules panel.
+        counter = app.storage.client.get('schedules_refresh_counter', 0)
+        app.storage.client['schedules_refresh_counter'] = counter + 1
+
 
 async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:
     """One SSE connection per tab; pushes parsed events into ``queue``.

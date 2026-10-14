@@ -179,14 +179,6 @@ def frame(title: str, version: str, get_logo_func=None):
                 sidebar_hints.append(sidebar_hint('nav.jobs'))
                 nav_links.append({'link': jobs_link, 'icon': jobs_icon, 'patterns': ['/jobs'], 'exact': False})
 
-            with ui.link('', '/jobs/new').classes('w-full no-underline text-black').style('border-radius: 2rem;') as job_new_link:
-                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                    job_new_icon = ui.icon('play_circle').classes('ml-5 text-2xl flex-shrink-0')
-                    job_new_label = i18n.bind(ui.label('Submit job').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.submit_job')
-                    sidebar_labels.append(job_new_label)
-                sidebar_hints.append(sidebar_hint('nav.submit_job'))
-                nav_links.append({'link': job_new_link, 'icon': job_new_icon, 'patterns': ['/jobs/new'], 'exact': False})
-
 
         ui.separator()
 
@@ -206,14 +198,14 @@ def frame(title: str, version: str, get_logo_func=None):
                 sidebar_labels.append(design_system_label)
             sidebar_hints.append(sidebar_hint('nav.design_system'))
         nav_links.append({'link': design_system_link, 'icon': design_system_icon, 'patterns': ['/design-system'], 'exact': False})
-        
 
-        # Admin-only nav entries: the role comes from the login snapshot in
-        # the shared session storage (no /auth/me round-trip in the header).
+        ui.separator()
+
+        # Admin-only App Settings hub (users, sessions, audit, providers…),
+        # below the separator — the role comes from the login snapshot in the
+        # shared session storage (no /auth/me round-trip in the header).
         from models.enums import UserRole
         if app.storage.user.get('role') == UserRole.ADMIN.value:
-            # Single admin hub: users, sessions, audit and providers are now
-            # tabs inside /settings (see views/settings_content.py).
             with ui.link('', '/settings').classes('w-full no-underline text-black').style('border-radius: 2rem;') as settings_link:
                 with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap') as settings_link_row:
                     settings_icon = ui.icon('tune').classes('ml-5 text-2xl flex-shrink-0')
@@ -221,16 +213,6 @@ def frame(title: str, version: str, get_logo_func=None):
                     sidebar_labels.append(settings_label)
                 sidebar_hints.append(sidebar_hint('appsettings.title'))
             nav_links.append({'link': settings_link, 'icon': settings_icon, 'patterns': ['/settings'], 'exact': False})
-
-        ui.separator()
-
-        with ui.link(target='https://github.com/frycodelab/nicegui-component-based', new_tab=True).classes('w-full no-underline text-black').style('border-radius: 2rem;') as github_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                with ui.element('div').classes('ml-8 flex-shrink-0').style('width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;'):
-                    ui.image('/assets/images/GitHub_Invertocat_Black_Clearspace.svg').style('width: 2rem; height: auto;')
-                github_label = ui.label('GitHub').classes(f'text-lg sidebar-label ml-2 flex-shrink-0')
-                sidebar_labels.append(github_label)
-            sidebar_hints.append(sidebar_hint('GitHub', translate=False))
 
         with ui.column().classes('absolute bottom-2 right-4 items-end gap-0'):
             corps = ui.button(i18n.t('action.collapse'), icon='chevron_left').classes('transition-all duration-300').props('flat').on('click', lambda: toggle_sidebar())
