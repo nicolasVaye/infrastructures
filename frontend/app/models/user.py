@@ -21,6 +21,7 @@ class User:
     must_change_password: bool
     created_at: str
     auth_provider: str = 'local'
+    idp_name: str | None = None
     email: str | None = None
     display_name: str | None = None
     avatar: str | None = None

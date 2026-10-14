@@ -43,6 +43,7 @@ def _user_out(user: UserRecord) -> UserOut:
     return UserOut(
         id=user.id, username=user.username, role=user.role,
         auth_provider=user.auth_provider,
+        idp_name=user.idp_ref.name if user.idp_ref else None,
         is_active=user.is_active, must_change_password=user.must_change_password,
         email=user.email, display_name=user.display_name, avatar=user.avatar,
         language=user.language,

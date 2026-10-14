@@ -63,6 +63,8 @@ class UserRecord(Base):
 
     role_ref: Mapped["RoleRecord"] = relationship(lazy="joined")
     sessions: Mapped[list["SessionRecord"]] = relationship(back_populates="user")
+    # The provider the account is federated through (None for local users).
+    idp_ref: Mapped["IdentityProviderRecord | None"] = relationship(lazy="joined")
 
     __table_args__ = (
         Index("ix_users_oidc_identity", "idp_id", "external_subject", unique=True),
@@ -117,6 +119,14 @@ class SessionRecord(Base):
     @property
     def username(self) -> str:
         return self.user.username
+
+    @property
+    def auth_provider(self) -> str:
+        return "idp" if self.user.idp_id else "local"
+
+    @property
+    def idp_name(self) -> str | None:
+        return self.user.idp_ref.name if self.user.idp_ref else None
 
 
 class AuditLogRecord(Base):

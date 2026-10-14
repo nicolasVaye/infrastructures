@@ -20,3 +20,5 @@ class SessionOut(BaseModel):
     last_activity: datetime
     revoked_at: datetime | None = None
     expires_at: datetime
+    auth_provider: str = "local"
+    idp_name: str | None = None

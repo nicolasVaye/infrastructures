@@ -65,6 +65,7 @@ def _json_to_user(data: dict) -> User:
         username=data['username'],
         role=UserRole(data['role']),
         auth_provider=data.get('auth_provider', 'local'),
+        idp_name=data.get('idp_name'),
         is_active=data['is_active'],
         must_change_password=data['must_change_password'],
         created_at=str(data.get('created_at', '')),

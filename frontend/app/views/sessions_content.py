@@ -124,6 +124,16 @@ def content() -> None:
                                 with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
                                     ui.icon('verified_user', size='0.9rem')
                                     ui.label(t('sessions.you'))
+                            # Local vs federated (IdP) source — same badge style
+                            # as the Users tab.
+                            if s.get('auth_provider') == 'idp' and s.get('idp_name'):
+                                with ui.element('span').classes('badge badge-info').style('gap: 4px;'):
+                                    ui.icon('vpn_key', size='0.9rem')
+                                    ui.label(s['idp_name'])
+                            else:
+                                with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                                    ui.icon('person', size='0.9rem')
+                                    ui.label(t('users.source.local'))
                         if count_total[s['username']] > 1:
                             # Informational: how many OTHER active sessions the
                             # same user holds (other browsers, a second login,

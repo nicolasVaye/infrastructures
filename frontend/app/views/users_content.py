@@ -67,6 +67,7 @@ def _users_tab(current_username: str) -> None:
                     'is_active': u.is_active,
                     'must_change_password': u.must_change_password,
                     'auth_provider': u.auth_provider,
+                    'idp_name': u.idp_name,
                 }
                 for u in UserService(session).get_all_users()
             ]
@@ -78,6 +79,7 @@ def _users_tab(current_username: str) -> None:
             ):
                 ui.label(t('users.col.user')).classes('flex-1')
                 ui.label(t('users.col.role')).style('width: 120px;')
+                ui.label(t('users.col.source')).style('width: 140px;')
                 ui.label(t('users.col.status')).style('width: 120px;')
                 ui.label(t('users.col.actions')).style('width: 180px;')
 
@@ -101,7 +103,9 @@ def _users_tab(current_username: str) -> None:
                             ui.label(u['username'][:1].upper())
                         with ui.column().classes('gap-0 min-w-0'):
                             ui.label(u['username']).classes('truncate').style('font-weight: 500;')
-                            if u['must_change_password']:
+                            # Federated accounts have no local password: the
+                            # "password change pending" hint never applies.
+                            if u['must_change_password'] and u['auth_provider'] == 'local':
                                 ui.label(t('users.pw_pending')).classes('text-xs text-muted')
 
                     # Role
@@ -109,6 +113,19 @@ def _users_tab(current_username: str) -> None:
                         with ui.element('span').classes(badge_cls).style('gap: 4px;'):
                             ui.icon(badge_icon, size='0.9rem')
                             ui.label(_role_label(u['role']))
+
+                    # Source: local account vs federated through an IdP.
+                    # The icon+badge make them visually distinct even if a
+                    # provider happens to be named "Local".
+                    with ui.element('div').style('width: 140px;'):
+                        if u['auth_provider'] == 'local':
+                            with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                                ui.icon('person', size='0.9rem')
+                                ui.label(t('users.source.local'))
+                        else:
+                            with ui.element('span').classes('badge badge-info').style('gap: 4px;'):
+                                ui.icon('vpn_key', size='0.9rem')
+                                ui.label(u['idp_name'] or t('users.source.idp'))
 
                     # Status
                     with ui.element('div').style('width: 120px;'):

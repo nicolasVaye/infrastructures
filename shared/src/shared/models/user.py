@@ -25,6 +25,8 @@ class UserOut(BaseModel):
     username: str
     role: UserRole
     auth_provider: str = "local"
+    # Name of the identity provider for federated accounts (None for local).
+    idp_name: str | None = None
     is_active: bool
     must_change_password: bool
     email: str | None = None
