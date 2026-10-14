@@ -204,6 +204,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'audit.col.ip':       {'en': 'IP', 'de': 'IP', 'fr': "IP"},
     'audit.filter.all':   {'en': 'All actions', 'de': 'Alle Aktionen', 'fr': "Toutes les actions"},
     'audit.filter.selected': {'en': '{n} action(s) selected', 'de': '{n} Aktion(en) ausgewählt', 'fr': "{n} action(s) sélectionnée(s)"},
+    'audit.filter.category': {'en': 'Category', 'de': 'Kategorie', 'fr': "Catégorie"},
+    'audit.filter.actions':  {'en': 'Actions', 'de': 'Aktionen', 'fr': "Actions"},
+    'audit.filter.reset':    {'en': 'Reset filter', 'de': 'Filter zurücksetzen', 'fr': "Réinitialiser le filtre"},
     'audit.clear':        {'en': 'Clear log', 'de': 'Protokoll leeren', 'fr': "Vider le journal"},
     'audit.clear_title':  {'en': 'Clear audit log', 'de': 'Audit-Protokoll leeren', 'fr': "Vider le journal d’audit"},
     'audit.clear_confirm':{'en': 'This permanently deletes all audit entries. Continue?', 'de': 'Dadurch werden alle Audit-Einträge dauerhaft gelöscht. Fortfahren?', 'fr': "Cela supprime définitivement toutes les entrées d’audit. Continuer ?"},
@@ -264,6 +267,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'sessions.kick_title':    {'en': 'Kick session', 'de': 'Sitzung beenden', 'fr': "Déconnecter la session"},
     'sessions.kick_confirm':  {'en': 'Revoke session {sid}…?', 'de': 'Sitzung {sid}… widerrufen?', 'fr': "Révoquer la session {sid}… ?"},
     'sessions.revoked':       {'en': 'Session revoked', 'de': 'Sitzung widerrufen', 'fr': "Session révoquée"},
+    'sessions.revoke':        {'en': 'Revoke this session', 'de': 'Diese Sitzung widerrufen', 'fr': "Révoquer cette session"},
     'sessions.not_possible':  {'en': 'Not possible', 'de': 'Nicht möglich', 'fr': "Impossible"},
 
     # Jobs board

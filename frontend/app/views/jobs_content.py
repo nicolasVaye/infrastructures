@@ -503,12 +503,12 @@ def content() -> None:
     # schedule is created/edited/deleted. The 1s timer below is a cheap
     # counter check that only rebuilds on change — tooltips and dialogs are
     # never disturbed by periodic redraws.
-    seen = {'jobs': app.storage.client.get('jobs_refresh_counter', 0),
-            'schedules': app.storage.client.get('schedules_refresh_counter', 0)}
+    seen = {'jobs': app.storage.user.get('jobs_refresh_counter', 0),
+            'schedules': app.storage.user.get('schedules_refresh_counter', 0)}
 
     def _on_event() -> None:
-        jobs = app.storage.client.get('jobs_refresh_counter', 0)
-        schedules = app.storage.client.get('schedules_refresh_counter', 0)
+        jobs = app.storage.user.get('jobs_refresh_counter', 0)
+        schedules = app.storage.user.get('schedules_refresh_counter', 0)
         if schedules != seen['schedules']:
             seen['schedules'] = schedules
             schedules_panel.refresh()

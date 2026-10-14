@@ -65,20 +65,20 @@ def handle_event(evt: dict) -> None:
             ui.run_javascript('window.location.href = "/login"')
 
     elif etype == 'job_updated':
-        counter = app.storage.client.get('jobs_refresh_counter', 0)
-        app.storage.client['jobs_refresh_counter'] = counter + 1
+        counter = storage.get('jobs_refresh_counter', 0)
+        storage['jobs_refresh_counter'] = counter + 1
 
     elif etype == 'schedule_updated':
         # A schedule was created/edited/deleted (possibly by another admin):
         # let the /jobs page rebuild its schedules panel.
-        counter = app.storage.client.get('schedules_refresh_counter', 0)
-        app.storage.client['schedules_refresh_counter'] = counter + 1
+        counter = storage.get('schedules_refresh_counter', 0)
+        storage['schedules_refresh_counter'] = counter + 1
 
     elif etype == 'sessions_changed':
         # A login/logout/kick (this tab, another tab, or another admin)
         # changed who is connected: let the Sessions tab refresh instantly.
-        counter = app.storage.client.get('sessions_refresh_counter', 0)
-        app.storage.client['sessions_refresh_counter'] = counter + 1
+        counter = storage.get('sessions_refresh_counter', 0)
+        storage['sessions_refresh_counter'] = counter + 1
 
 
 async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:

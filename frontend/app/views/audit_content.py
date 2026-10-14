@@ -42,7 +42,7 @@ _ACTION_META: dict[str, tuple[str, str]] = {
 
 _DEFAULT_META = ('history', 'badge badge-default')
 
-# Thematic grouping of audit actions for the filter menu:
+# Thematic grouping of audit actions for the linked filter selects:
 # i18n group key -> ordered action values. Every AuditAction must appear in
 # exactly one group so the flat enum list and the grouped view stay in sync.
 _AUDIT_THEMES: list[tuple[str, tuple[str, ...]]] = [
@@ -80,6 +80,8 @@ _AUDIT_THEMES: list[tuple[str, tuple[str, ...]]] = [
     )),
 ]
 
+_THEME_ACTIONS: dict[str, tuple[str, ...]] = dict(_AUDIT_THEMES)
+
 # How many rows the list shows at once.
 _LIMIT = 200
 
@@ -94,9 +96,23 @@ def _action_label(action: str) -> str:
 
 def content() -> None:
     """Audit tab of the /settings admin hub (no page header; guard in hub)."""
-    # Filter state: set of selected action values (multi-select).
-    # An empty set means "all actions".
-    state = {'actions': set()}
+    # Filter state: selected category ('all' or a group key) plus the set of
+    # selected action values (multi-select). An empty set inside a category
+    # means "every action of that category".
+    state = {'category': 'all', 'actions': set()}
+
+    def _effective_actions() -> list[str] | None:
+        """Translate the two combos into the service's `actions` argument.
+
+        - category 'all': the explicitly selected actions, or None (= all).
+        - a category: its selected actions, or the whole category when none
+          is picked (choosing a category filters to that category).
+        """
+        if state['category'] == 'all':
+            return sorted(state['actions']) or None
+        group = _THEME_ACTIONS.get(state['category'], ())
+        selected = [a for a in group if a in state['actions']]
+        return selected or list(group)
 
     @ui.refreshable
     def audit_table() -> None:
@@ -113,7 +129,7 @@ def content() -> None:
                     'ip': e.ip,
                 }
                 for e in service.get_recent(limit=_LIMIT,
-                                           actions=sorted(state['actions']) or None)
+                                           actions=_effective_actions())
             ]
 
         ui.label(t('audit.showing').format(shown=len(entries), total=total)) \
@@ -179,103 +195,65 @@ def content() -> None:
         notify(t('audit.cleared').format(n=removed), type='warning')
         audit_table.refresh()
 
-    # Toolbar: action filter, refresh, clear.
-    # Multi-select dropdown grouped by theme; the menu stays open so
-    # several actions can be ticked; the table refreshes live on every
-    # change.
+    # Toolbar: linked filter selects, refresh, clear.
+    # First combo = category ('all' or one of the six themes); second combo =
+    # the actions INSIDE that category (multi-select). Picking a category
+    # without any action shows the whole category; picking actions narrows
+    # it down. The table refreshes live on every change.
     with ui.row().classes('w-full items-center justify-between gap-2 mb-3 no-wrap'):
-        with ui.element('div').classes('flex-1').style('max-width: 280px;'):
-            filter_btn = ui.button(on_click=lambda: filter_menu.open()) \
-                .props('outline no-caps').classes('button button-secondary w-full justify-between')
+        with ui.row().classes('items-center gap-2 flex-1'):
+            def _category_options() -> dict[str, str]:
+                return {'all': t('audit.filter.all')} \
+                    | {key: t(key) for key, _ in _AUDIT_THEMES}
 
-            def _render_filter_btn() -> None:
-                selected = state['actions']
-                filter_btn.clear()
-                with filter_btn:
-                    with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
-                        ui.icon('filter_list', size='0.9rem')
-                        if not selected:
-                            ui.label(t('audit.filter.all')).classes('text-sm')
-                        else:
-                            ui.label(t('audit.filter.selected').format(n=len(selected))) \
-                                .classes('text-sm')
-                    ui.icon('arrow_drop_down').classes('ml-auto')
-            _render_filter_btn()
+            def _action_options() -> dict[str, str]:
+                if state['category'] == 'all':
+                    actions = [a for group in _THEME_ACTIONS.values() for a in group]
+                else:
+                    actions = _THEME_ACTIONS.get(state['category'], ())
+                return {a: _action_label(a) for a in actions}
 
-            with ui.menu() as filter_menu:
-                filter_menu.props('no-route-dismiss')
-                filter_menu.classes('audit-filter-menu')
+            category_select = ui.select(
+                options=_category_options(),
+                value=state['category'],
+                label=t('audit.filter.category'),
+            ).props('outlined dense no-caps').classes('audit-filter-select')
 
-                @ui.refreshable
-                def _filter_items() -> None:
-                    """Menu body: rebuilt on every toggle so the checkboxes
-                    (and the highlight of the current selection) stay in
-                    sync with state['actions']. Actions are grouped by
-                    theme; each theme header carries a tri-state checkbox
-                    that toggles the whole group."""
-                    with ui.element('button').classes('audit-filter-item').on(
-                        'click', lambda: _select_all()
-                    ):
-                        with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
-                            ui.icon('clear_all', size='0.9rem')
-                            ui.label(t('audit.filter.all')).classes('text-sm')
-                        ui.icon('check_box_outline_blank' if state['actions']
-                                else 'check_box', size='0.9rem').classes('ml-auto text-muted')
+            action_select = ui.select(
+                options=_action_options(),
+                value=[],
+                multiple=True,
+                label=t('audit.filter.actions'),
+            ).props('outlined dense no-caps use-chips').classes('audit-filter-select')
 
-                    def _toggle(av: str) -> None:
-                        if av in state['actions']:
-                            state['actions'].discard(av)
-                        else:
-                            state['actions'].add(av)
-                        _render_filter_btn()
-                        _filter_items.refresh()
-                        audit_table.refresh()
+            def _on_category_change(_) -> None:
+                """Switching category: reset the action selection and re-scope
+                the second combo to the new category's actions."""
+                state['category'] = category_select.value or 'all'
+                state['actions'].clear()
+                action_select.set_options(_action_options())
+                action_select.set_value([])
+                audit_table.refresh()
 
-                    for group_key, group_actions in _AUDIT_THEMES:
-                        selected_in_group = sum(1 for a in group_actions
-                                                if a in state['actions'])
-                        if selected_in_group == 0:
-                            group_icon = 'check_box_outline_blank'
-                        elif selected_in_group == len(group_actions):
-                            group_icon = 'check_box'
-                        else:
-                            group_icon = 'indeterminate_check_box'
+            def _on_actions_change(_) -> None:
+                state['actions'] = set(action_select.value or [])
+                audit_table.refresh()
 
-                        def _toggle_group(actions: tuple[str, ...] = group_actions,
-                                          sel: int = selected_in_group) -> None:
-                            if sel == len(actions):
-                                state['actions'].difference_update(actions)
-                            else:
-                                state['actions'].update(actions)
-                            _render_filter_btn()
-                            _filter_items.refresh()
-                            audit_table.refresh()
+            category_select.on_value_change(_on_category_change)
+            action_select.on_value_change(_on_actions_change)
 
-                        with ui.element('button').classes('audit-filter-item audit-filter-group') \
-                                .on('click', _toggle_group):
-                            ui.label(t(group_key)).classes('text-sm font-semibold')
-                            ui.icon(group_icon, size='0.9rem').classes('ml-auto text-muted')
+            def _reset_filter() -> None:
+                """Back to 'all actions' whatever the current state (set_value
+                alone would be a no-op when the category is already 'all')."""
+                category_select.set_value('all')
+                state['actions'].clear()
+                action_select.set_options(_action_options())
+                action_select.set_value([])
+                audit_table.refresh()
 
-                        for action_value in group_actions:
-                            icon, badge_cls = _ACTION_META.get(action_value, _DEFAULT_META)
-
-                            with ui.element('button').classes('audit-filter-item audit-filter-sub') \
-                                    .on('click', lambda av=action_value: _toggle(av)):
-                                with ui.element('span').classes('badge ' + badge_cls).style('gap: 4px;'):
-                                    ui.icon(icon, size='0.9rem')
-                                    ui.label(_action_label(action_value)).classes('text-sm')
-                                with ui.element('span').classes('ml-auto'):
-                                    ui.icon('check_box' if action_value in state['actions']
-                                            else 'check_box_outline_blank', size='0.9rem') \
-                                        .classes('text-muted')
-                _filter_items()
-
-                def _select_all() -> None:
-                    """Reset the selection to 'all actions'."""
-                    state['actions'].clear()
-                    _render_filter_btn()
-                    _filter_items.refresh()
-                    audit_table.refresh()
+            ui.button(t('audit.filter.reset'), icon='filter_alt_off',
+                      on_click=_reset_filter) \
+                .props('flat no-caps').classes('button button-ghost')
 
         with ui.row().classes('items-center gap-2'):
             ui.button(t('common.refresh'), icon='refresh', on_click=lambda: audit_table.refresh()) \

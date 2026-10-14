@@ -7,7 +7,7 @@ import secrets
 from functools import wraps
 from pathlib import Path
 
-from fastapi import Response
+from fastapi import Request, Response
 from fastapi.responses import FileResponse
 
 # engine.io caps how many socket packets one HTTP payload may carry (16 by
@@ -50,6 +50,24 @@ app.add_middleware(security.SecurityHeadersMiddleware)
 @app.get('/health')
 async def health() -> Response:
     return Response(content='ok', media_type='text/plain', status_code=200)
+
+
+@app.post('/sidebar-width')
+async def set_sidebar_width(request: Request) -> Response:
+    """Persist the drawer width chosen with the sidebar splitter.
+
+    The splitter drag/click runs client-side (see _SIDEBAR_SPLITTER_JS) for
+    smooth live resizing; this endpoint only stores the final width so the
+    next page render (any tab, storage is per user) restores it.
+    """
+    try:
+        payload = await request.json()
+        width = int(payload.get('width', 240))
+    except Exception:  # noqa: BLE001  malformed payloads fall back to default
+        width = 240
+    width = max(100, min(400, width))
+    app.storage.user['sidebar-width'] = width
+    return Response(content='{"ok": true}', media_type='application/json')
 
 
 @app.get('/avatar')
@@ -241,6 +259,123 @@ window.addEventListener('storage', function (e) {
 </script>'''
 
 
+# Sidebar splitter: the vertical handle on the drawer's right border can be
+# DRAGGED to resize the nav bar live (100–400 px) or CLICKED to toggle between
+# icon-only (100 px) and standard (240 px) width. Everything happens in the
+# browser for smoothness; only the final width is POSTed to /sidebar-width so
+# the server-side render (and every other tab of the same user) restores it.
+# Label visibility is CSS-driven: 'sidebar-wide' on <body> shows the text
+# labels, otherwise the labels collapse to icons and the hover hints show.
+_SIDEBAR_SPLITTER_JS = '''<script>
+(function () {
+  var MINW = 100, MAXW = 400, TOGGLE = 240, WIDE = 180;
+
+  function get(name) { return document.querySelector(name); }
+
+  function apply(w, persist) {
+    var handle = get('.sidebar-collapse-handle');
+    var drawer = get('.q-drawer--left');
+    if (handle) {
+      handle.style.left = (w - 7) + 'px';
+      var icon = handle.querySelector('.sidebar-collapse-handle-icon');
+      if (icon) { icon.textContent = (w >= WIDE) ? 'chevron_left' : 'chevron_right'; }
+    }
+    if (drawer) { drawer.style.width = w + 'px'; }
+    var wide = w >= WIDE;
+    document.querySelectorAll('.sidebar-label').forEach(function (l) {
+      l.classList.toggle('expanded', wide);
+      l.classList.toggle('collapsed', !wide);
+    });
+    document.body.classList.toggle('sidebar-wide', wide);
+    if (persist) {
+      fetch('/sidebar-width', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ width: w })
+      }).catch(function () {});
+    }
+  }
+
+  // Initial sync: server-side rendering sets the drawer width but not the
+  // handle position, so reflect it once the drawer hits the DOM.
+  var tries = 0;
+  var initTimer = setInterval(function () {
+    var drawer = get('.q-drawer--left');
+    var handle = get('.sidebar-collapse-handle');
+    if (drawer && handle) {
+      var w = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
+      handle.style.left = (w - 7) + 'px';
+      document.body.classList.toggle('sidebar-wide', w >= WIDE);
+      clearInterval(initTimer);
+    } else if (++tries > 150) { clearInterval(initTimer); }
+  }, 200);
+
+  var dragging = false, moved = false, startX = 0, startW = TOGGLE;
+
+  function beginDrag(x) {
+    var drawer = get('.q-drawer--left');
+    if (!drawer) { return; }
+    dragging = true; moved = false;
+    startX = x;
+    startW = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
+    drawer.style.transition = 'none';
+    var handle = get('.sidebar-collapse-handle');
+    if (handle) { handle.style.transition = 'none'; }
+  }
+
+  function moveDrag(x) {
+    if (!dragging) { return; }
+    var dx = x - startX;
+    if (Math.abs(dx) > 3) { moved = true; }
+    apply(Math.min(MAXW, Math.max(MINW, startW + dx)), false);
+  }
+
+  function endDrag(x) {
+    if (!dragging) { return; }
+    dragging = false;
+    var drawer = get('.q-drawer--left');
+    if (drawer) { drawer.style.transition = ''; }
+    var handle = get('.sidebar-collapse-handle');
+    if (handle) { handle.style.transition = ''; }
+    var w;
+    if (moved) {
+      w = Math.round(Math.min(MAXW, Math.max(MINW, startW + x - startX)));
+    } else {
+      // Simple click: toggle icon-only <-> standard width.
+      w = (startW < WIDE) ? TOGGLE : MINW;
+      apply(w, false);
+    }
+    fetch('/sidebar-width', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ width: w })
+    }).catch(function () {});
+  }
+
+  document.addEventListener('mousedown', function (ev) {
+    if (ev.target.closest && ev.target.closest('.sidebar-collapse-handle')) {
+      ev.preventDefault();
+      beginDrag(ev.clientX);
+    }
+  });
+  document.addEventListener('mousemove', function (ev) { moveDrag(ev.clientX); });
+  document.addEventListener('mouseup', function (ev) { endDrag(ev.clientX); });
+
+  document.addEventListener('touchstart', function (ev) {
+    if (ev.target.closest && ev.target.closest('.sidebar-collapse-handle')) {
+      beginDrag(ev.touches[0].clientX);
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', function (ev) {
+    if (dragging) { moveDrag(ev.touches[0].clientX); }
+  }, { passive: true });
+  document.addEventListener('touchend', function (ev) {
+    if (dragging) { endDrag((ev.changedTouches[0] || {}).clientX || startX); }
+  });
+})();
+</script>'''
+
+
 # Base layout decorator: applies theme, global CSS and sidebar shell
 def with_base_layout(route_handler):
     @wraps(route_handler)
@@ -254,8 +389,9 @@ def with_base_layout(route_handler):
         # Preload avoids a layout-shift flash when the sidebar logo first renders
         ui.add_head_html('<link rel="preload" href="/logo" as="image">')
 
-        if 'sidebar-collapsed' not in app.storage.user:
-            app.storage.user['sidebar-collapsed'] = False
+        if 'sidebar-width' not in app.storage.user:
+            app.storage.user['sidebar-width'] = 240
+        ui.add_head_html(_SIDEBAR_SPLITTER_JS, shared=True)
 
         # Heartbeat so the backend knows this client is connected. It also
         # watches for session revocation (logout/kick in another tab) and

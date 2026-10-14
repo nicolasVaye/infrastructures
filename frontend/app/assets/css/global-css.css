@@ -523,7 +523,7 @@ body { font-size: var(--app-font-size) !important; }
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: ew-resize;
   background: var(--panel-bg);
   border: 1px solid var(--border);
   border-right: none;
@@ -532,6 +532,8 @@ body { font-size: var(--app-font-size) !important; }
   z-index: 3000;
   transition: left 0.3s ease-in-out, background var(--transition),
               color var(--transition), height var(--transition);
+  user-select: none;
+  touch-action: none;
 }
 .sidebar-collapse-handle:hover,
 .sidebar-collapse-handle:active {
@@ -542,10 +544,22 @@ body { font-size: var(--app-font-size) !important; }
 .sidebar-collapse-handle-icon {
   font-size: 14px !important;
   transition: transform 0.3s ease-in-out;
+  pointer-events: none;
 }
 /* On mobile the drawer overlays the page, so the handle makes no sense */
 @media (max-width: 1023.98px) {
   .sidebar-collapse-handle { display: none !important; }
+}
+
+/* Icon-only hover hints (nav-item tooltips): shown while the sidebar is too
+   narrow for text labels, hidden as soon as 'sidebar-wide' is set on <body>
+   by the splitter JS (pure CSS, no server round-trip per resize step). */
+body.sidebar-wide .tooltip.sidebar-hint { display: none !important; }
+
+/* Linked audit filter selects (category + actions) */
+.audit-filter-select { min-width: 220px; }
+@media (max-width: 1023.98px) {
+  .audit-filter-select { min-width: 160px; }
 }
 
 .account-dropdown {

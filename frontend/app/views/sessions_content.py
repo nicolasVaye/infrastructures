@@ -194,22 +194,23 @@ def content() -> None:
                         # refresh then runs unauthenticated and must not raise.
                         safe_auto_refresh(sessions_table.refresh)()
 
-                    with ui.button(icon='logout', on_click=_kick).props('flat dense color=negative'):
+                    with ui.button(icon='logout', on_click=_kick).props('flat dense color=negative') \
+                            .tooltip(t('sessions.revoke')):
                         pass
 
     sessions_table()
 
-    # NO fast polling: logins/logouts/kicks (this tab, another tab, another
+    # Live updates: logins/logouts/kicks (this tab, another tab, another
     # admin — even another backend replica) push a 'sessions_changed' SSE
-    # event that bumps this counter, and the table refreshes only then.
+    # event that bumps a counter in app.storage.user (shared by every
+    # client/tab of the browser; the SSE drain timer lives on the root page
+    # client, so a client-scoped counter would never be seen from here).
     # The slow 60s fallback below is just for silent TTL expiry: a session
-    # that dies without a logout event (closed browser) never emits anything,
-    # and 'connected' is defined by heartbeat freshness the server can't
-    # know in advance. Tooltips and hover states are no longer disturbed.
-    seen = {'counter': app.storage.client.get('sessions_refresh_counter', 0)}
+    # that dies without a logout event never emits anything.
+    seen = {'counter': app.storage.user.get('sessions_refresh_counter', 0)}
 
     def _on_event() -> None:
-        counter = app.storage.client.get('sessions_refresh_counter', 0)
+        counter = app.storage.user.get('sessions_refresh_counter', 0)
         if counter != seen['counter']:
             seen['counter'] = counter
             safe_auto_refresh(sessions_table.refresh)()

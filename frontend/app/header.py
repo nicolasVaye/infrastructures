@@ -22,31 +22,11 @@ _SHEET_SECTIONS = [
 @contextmanager
 def frame(title: str, version: str, get_logo_func=None):
 
-    # persists collapsed state in user session storage
-    async def toggle_sidebar():
-        app.storage.user['sidebar-collapsed'] = not app.storage.user['sidebar-collapsed']
-        collapsed = app.storage.user['sidebar-collapsed']
-
-        if collapsed:
-            left_drawer.props("width=240")
-            await ui.run_javascript('new Promise(resolve => setTimeout(resolve, 50))')
-            for label in sidebar_labels:
-                label.classes(remove='collapsed', add='expanded')
-            for tip in sidebar_hints:
-                tip.set_visibility(False)
-        else:
-            for label in sidebar_labels:
-                label.classes(remove='expanded', add='collapsed')
-            for tip in sidebar_hints:
-                tip.set_visibility(True)
-            await ui.run_javascript('new Promise(resolve => setTimeout(resolve, 50))')
-            left_drawer.props("width=100")
-        # The vertical handle sits on the sidebar's right border; its chevron
-        # and position reflect the resulting state (wide -> collapse to the left).
-        _sync_handle(collapsed)
-
     # Header toolbar
-    with ui.header().classes(replace='row items-center h-20 justify-start') as header:
+    # fixed=True pins the header to the viewport so the sub pages never scroll
+    # under/over it: Quasar then reserves the header height at the top of the
+    # page container and scrolling happens strictly below the header.
+    with ui.header(fixed=True).classes(replace='row items-center h-20 justify-start') as header:
         ui.label("").classes('pr-4 md:pr-8')
 
         # Application logo, served by GET /logo (custom logo from the admin
@@ -294,33 +274,28 @@ def frame(title: str, version: str, get_logo_func=None):
         # on_connect fires only for a real WebSocket, so bots never reach this
         ui.context.client.on_connect(_highlight_from_path)
 
-    # Vertical collapse handle straddling the sidebar's right separator.
+    # Vertical splitter handle straddling the sidebar's right separator.
     # Rendered OUTSIDE the drawer with position:fixed, otherwise the drawer's
-    # scrollable content area pushes it below the nav links; the left offset
-    # tracks the two possible drawer widths (240 wide / 100 collapsed).
-    with ui.element('div').classes('sidebar-collapse-handle') \
-            .on('click', lambda: toggle_sidebar()) as handle:
+    # scrollable content area pushes it below the nav links. The width is
+    # fully client-driven (see _SIDEBAR_SPLITTER_JS): dragging the handle
+    # resizes the drawer live between 100 and 400 px, a simple click toggles
+    # between icon-only (100 px) and standard (240 px), and the resulting
+    # width is persisted server-side via POST /sidebar-width. The chevron
+    # reflects the resulting state (wide -> collapse to the left).
+    with ui.element('div').classes('sidebar-collapse-handle') as handle:
         handle_icon = ui.icon('chevron_left').classes('sidebar-collapse-handle-icon')
 
-    def _sync_handle(collapsed: bool) -> None:
-        handle.style(f'left: {(240 if collapsed else 100) - 7}px;')
-        handle_icon.name = 'chevron_left' if collapsed else 'chevron_right'
-
-    # sync drawer width and label visibility to the persisted state
-    if app.storage.user['sidebar-collapsed']:
-        left_drawer.props("width=240")
-        _sync_handle(True)
-        for label in sidebar_labels:
-            label.classes(add='expanded')
-        for tip in sidebar_hints:
-            tip.set_visibility(False)
-    else:
-        left_drawer.props("width=100")
-        _sync_handle(False)
-        for label in sidebar_labels:
-            label.classes(add='collapsed')
-        for tip in sidebar_hints:
-            tip.set_visibility(True)
+    # sync drawer width, labels and handle to the persisted width
+    _sidebar_width = max(100, min(400, int(app.storage.user.get('sidebar-width', 240) or 240)))
+    _collapsed = _sidebar_width < 180
+    left_drawer.props(f'width={_sidebar_width}')
+    handle.style(f'left: {_sidebar_width - 7}px;')
+    handle_icon.name = 'chevron_right' if _collapsed else 'chevron_left'
+    for label in sidebar_labels:
+        label.classes(add='collapsed' if _collapsed else 'expanded')
+    # Icon-only hints are pure CSS now: the splitter JS toggles the
+    # 'sidebar-wide' class on <body> and global-css.css hides the tooltips
+    # while the sidebar is wide enough to show the text labels.
 
     with ui.column().classes('w-full items-stretch mobile-content'):
         yield
@@ -354,7 +329,9 @@ def frame(title: str, version: str, get_logo_func=None):
         with ui.element('div').classes('mobile-sheet-grid'):
             with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), ui.navigate.to('/account')]):
                 ui.icon('person').classes('mobile-sheet-icon')
-                i18n.bind(ui.label(i18n.t('account.settings')).classes('mobile-sheet-label'), 'account.settings')
+                # Same destination as the desktop account dropdown (/account),
+                # so it carries the same "Account" label, not "Settings".
+                i18n.bind(ui.label(i18n.t('account.account')).classes('mobile-sheet-label'), 'account.account')
             from models.enums import UserRole
             if app.storage.user.get('role') == UserRole.ADMIN.value:
                 # Single admin hub on mobile too: everything lives in /settings.
