@@ -49,6 +49,17 @@ _TYPE_DESC = {
     'maintenance.cleanup_sessions': ('jobs.type.cleanup_sessions', 'jobs.params.cleanup_sessions'),
 }
 
+# Human-readable names for job types (falls back to the raw type id).
+_TYPE_LABEL = {
+    'demo.sleep': 'jobs.type_name.demo_sleep',
+    'maintenance.cleanup_sessions': 'jobs.type_name.cleanup_sessions',
+}
+
+
+def _type_name(job_type: str) -> str:
+    """Translate a job type id into a short, human-readable label."""
+    return t(_TYPE_LABEL[job_type]) if job_type in _TYPE_LABEL else job_type
+
 
 def content() -> None:
     page_header(t('jobs.title'), t('jobs.subtitle'))
@@ -145,7 +156,7 @@ def content() -> None:
                                 with ui.row().classes('items-center gap-2 mb-1'):
                                     ui.icon(_TYPE_ICONS.get(j['job_type'], 'task_alt'),
                                             size='0.9rem').classes('text-muted')
-                                    ui.label(j['job_type']).classes('text-sm font-medium')
+                                    ui.label(_type_name(j['job_type'])).classes('text-sm font-medium')
 
                                 # What this job does (known types)
                                 desc_key = _TYPE_DESC.get(j['job_type'], (None, None))[0]
@@ -218,7 +229,7 @@ def content() -> None:
             with ui.row().classes('items-center gap-2'):
                 ui.icon(_TYPE_ICONS.get(job['job_type'], 'task_alt'), size='1.1rem') \
                     .classes('text-muted')
-                ui.label(f"#{job['id']} — {job['job_type']}").classes('section-title')
+                ui.label(f"#{job['id']} — {_type_name(job['job_type'])}").classes('section-title')
 
             desc_key, params_key = _TYPE_DESC.get(job['job_type'], (None, None))
             if desc_key:
@@ -283,7 +294,7 @@ def content() -> None:
                         with ui.row().classes('items-center gap-2'):
                             ui.icon(_TYPE_ICONS.get(sc['job_type'], 'task_alt'),
                                     size='0.9rem').classes('text-muted')
-                            ui.label(sc['job_type']).classes('text-sm font-medium truncate')
+                            ui.label(_type_name(sc['job_type'])).classes('text-sm font-medium truncate')
                             desc_key = _TYPE_DESC.get(sc['job_type'], (None, None))[0]
                             if desc_key:
                                 ui.label(t(desc_key)).classes('text-xs text-muted truncate')
@@ -306,7 +317,7 @@ def content() -> None:
                         with get_session() as api:
                             api.post('/jobs', json={'job_type': sc_['job_type'],
                                                     'params': sc_.get('params') or {}})
-                        notify(t('jobs.run_now_msg').format(type=sc_['job_type']),
+                        notify(t('jobs.run_now_msg').format(type=_type_name(sc_['job_type'])),
                                type='positive')
                         board.refresh()
 

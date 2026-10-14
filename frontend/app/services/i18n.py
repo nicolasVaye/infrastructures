@@ -271,6 +271,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
                                'de': "params: seconds — Dauer in Sekunden (Standard 5)."},
     'jobs.type.cleanup_sessions': {'en': 'Maintenance: deletes ended login sessions older than the retention window.',
                                    'de': 'Wartung: löscht beendete Anmeldesitzungen, die älter als die Aufbewahrungsfrist sind.'},
+    'jobs.type_name.demo_sleep':  {'en': 'Demo sleep', 'de': 'Demo-Sleep'},
+    'jobs.type_name.cleanup_sessions': {'en': 'Session cleanup', 'de': 'Sitzungs-Bereinigung'},
     'jobs.params.cleanup_sessions': {'en': "params: keep_days — delete sessions ended more than this many days ago (default 7).",
                                      'de': "params: keep_days — Sitzungen löschen, die vor mehr Tagen beendet wurden (Standard 7)."},
     'jobs.params_label':    {'en': 'Parameters', 'de': 'Parameter'},
