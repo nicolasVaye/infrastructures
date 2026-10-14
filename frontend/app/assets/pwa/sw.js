@@ -2,7 +2,11 @@
    Static assets use stale-while-revalidate; navigations are network-first with an
    offline fallback. NiceGUI's realtime channels and API routes are never intercepted. */
 
-const CACHE = 'nicestack-v1';
+// Bump CACHE on every shipped change touching precached assets: the activate
+// handler below deletes any older cache name, so every client picks the new
+// files on the FIRST load after the service worker refreshes (otherwise the
+// stale-while-revalidate strategy below keeps serving the previous CSS/JS).
+const CACHE = 'nicestack-v7.39.1';
 const PRECACHE = [
   '/assets/css/global-css.css',
   '/assets/css/icons.css',

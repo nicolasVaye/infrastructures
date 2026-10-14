@@ -34,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 RECONNECT_DELAY = 2.0
 
+# SSE read timeout: the backend sends a keepalive comment every 15s, so a
+# healthy stream always delivers bytes well within this window. A silently
+# dead connection (proxy hiccup, backend restart, token expiry mid-stream…)
+# then raises ReadTimeout instead of hanging forever — the loop reconnects
+# and the tab keeps receiving live events. This was the root cause of the
+# "sessions only appear after the 60s fallback poll" bug.
+_STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=45.0, write=10.0, pool=10.0)
+
 
 def handle_event(evt: dict) -> None:
     """Apply one event. Must run in page context (accesses app.storage)."""
@@ -96,7 +104,7 @@ async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:
             if not token:
                 await asyncio.sleep(RECONNECT_DELAY)
                 continue
-            async with httpx.AsyncClient(base_url=backend, timeout=None) as client:
+            async with httpx.AsyncClient(base_url=backend, timeout=_STREAM_TIMEOUT) as client:
                 async with client.stream(
                     'GET', '/events',
                     headers={'Authorization': f'Bearer {token}'},

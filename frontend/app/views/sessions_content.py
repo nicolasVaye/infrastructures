@@ -17,6 +17,7 @@ from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
 from core.database import get_session
 from services.i18n import bind_format, t
+from services.tz import format_local, get_app_timezone
 from views._common import safe_auto_refresh
 
 _client_icons = {
@@ -75,6 +76,9 @@ def content() -> None:
             raise
         # Total (unfiltered) counts for the per-user summary chips
         count_total = Counter(s['username'] for s in all_sessions)
+        # Timestamps are stored UTC; display them in the admin-configured
+        # timezone (GET /app/timezone, short-cached per render).
+        display_tz = get_app_timezone()
 
         if selected_user['username'] is not None:
             sessions = [s for s in all_sessions if s['username'] == selected_user['username']]
@@ -171,7 +175,7 @@ def content() -> None:
                     ui.label(s.get('ip') or '—').classes('text-xs text-muted').style(
                         'width: 130px; font-family: monospace;'
                     )
-                    ui.label(s.get('last_activity', '')).classes('text-xs text-muted').style(
+                    ui.label(format_local(s.get('last_activity'), display_tz)).classes('text-xs text-muted').style(
                         'width: 190px; font-family: monospace;'
                     )
 

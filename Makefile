@@ -9,6 +9,20 @@ help:  ## List available targets
 up:  ## Build and start the full stack (with Keycloak)
 	docker compose --profile keycloak up -d --build
 
+rebuild:  ## Force a full rebuild + recreate of every container (picks up code changes)
+	docker compose --profile keycloak down
+	docker compose --profile keycloak build --no-cache
+	docker compose --profile keycloak up -d --force-recreate
+
+restart:  ## Restart the containers WITHOUT rebuilding (config/panic reload)
+	docker compose --profile keycloak restart
+
+logs:  ## Tail the logs of every service
+	docker compose logs -f --tail=100
+
+ps:  ## Show container status
+	docker compose ps
+
 down:  ## Stop the stack
 	docker compose --profile keycloak down
 
@@ -36,4 +50,4 @@ upgrade:  ## Refresh both lockfiles to the newest compatible versions
 	cd backend && uv lock --upgrade
 	cd frontend && uv lock --upgrade
 
-.PHONY: help up down outdated versions lock upgrade
+.PHONY: help up rebuild restart logs ps down outdated versions lock upgrade

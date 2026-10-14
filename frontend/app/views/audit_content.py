@@ -15,6 +15,7 @@ from models.audit import AuditAction
 from models.enums import UserRole
 from services.audit_service import AuditService
 from services.i18n import t
+from services.tz import format_local, get_app_timezone
 
 # action value -> (Material icon, badge class) for the activity list.
 _ACTION_META: dict[str, tuple[str, str]] = {
@@ -131,6 +132,9 @@ def content() -> None:
                 for e in service.get_recent(limit=_LIMIT,
                                            actions=_effective_actions())
             ]
+        # Display timezone: timestamps are stored UTC, the admin-configured
+        # zone (GET /app/timezone, short-cached) drives how they render.
+        display_tz = get_app_timezone()
 
         ui.label(t('audit.showing').format(shown=len(entries), total=total)) \
             .classes('text-xs text-muted mb-2')
@@ -160,7 +164,7 @@ def content() -> None:
                 with ui.row().classes('w-full items-center px-4 py-3 no-wrap').style(
                     'border-bottom: 1px solid var(--border, #f4f4f5);'
                 ):
-                    ui.label(e['created_at']).style(
+                    ui.label(format_local(e['created_at'], display_tz)).style(
                         'width: 170px; font-family: monospace;'
                     ).classes('text-xs text-muted')
 

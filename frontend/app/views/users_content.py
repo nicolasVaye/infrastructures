@@ -18,6 +18,7 @@ from models.enums import UserRole
 from services.audit_service import record as audit_record
 from services.i18n import t
 from services.user_service import DEFAULT_USER_PASSWORD, UserService
+from views._common import safe_auto_refresh
 
 
 # The bootstrap admin is protected: it can never be deleted or disabled.
@@ -73,6 +74,15 @@ def _users_tab(current_username: str) -> None:
                 for u in UserService(session).get_all_users()
             ]
 
+        # Connected users: usernames holding at least one active session
+        # (GET /sessions — this tab is admin-only, same guard as the API).
+        # A fetch failure only degrades this cosmetic column to "unknown".
+        try:
+            with get_session() as session:
+                online = {s['username'] for s in session.get('/sessions') or []}
+        except Exception:  # noqa: BLE001 — column stays neutral on API error
+            online = None
+
         with ui.column().classes('card w-full gap-0 p-0'):
             # Header row
             with ui.row().classes('w-full items-center px-4 py-3 label-text').style(
@@ -81,6 +91,7 @@ def _users_tab(current_username: str) -> None:
                 ui.label(t('users.col.user')).classes('flex-1')
                 ui.label(t('users.col.role')).style('width: 120px;')
                 ui.label(t('users.col.source')).style('width: 140px;')
+                ui.label(t('users.col.online')).style('width: 110px;')
                 ui.label(t('users.col.status')).style('width: 120px;')
                 ui.label(t('users.col.actions')).style('width: 180px;')
 
@@ -134,6 +145,19 @@ def _users_tab(current_username: str) -> None:
                             with ui.element('span').classes('badge badge-info').style('gap: 4px;'):
                                 ui.icon('vpn_key', size='0.9rem')
                                 ui.label(u['idp_name'] or t('users.source.idp'))
+
+                    # Online: holds at least one active session right now.
+                    with ui.element('div').style('width: 110px;'):
+                        if online is None:
+                            ui.label('—').classes('text-xs text-muted')
+                        elif u['username'] in online:
+                            with ui.element('span').classes('badge badge-success').style('gap: 4px;'):
+                                ui.icon('fiber_manual_record', size='0.6rem')
+                                ui.label(t('users.online'))
+                        else:
+                            with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                                ui.icon('fiber_manual_record', size='0.6rem')
+                                ui.label(t('users.offline'))
 
                     # Status
                     with ui.element('div').style('width: 120px;'):
@@ -335,6 +359,19 @@ def _users_tab(current_username: str) -> None:
             .classes('button button-primary')
 
     user_table()
+
+    # Live updates: same SSE-driven counter as the Sessions tab — a
+    # login/logout/kick anywhere (any browser, any user) refreshes the
+    # online badges instantly instead of waiting for the next visit.
+    seen = {'counter': app.storage.user.get('sessions_refresh_counter', 0)}
+
+    def _on_event() -> None:
+        counter = app.storage.user.get('sessions_refresh_counter', 0)
+        if counter != seen['counter']:
+            seen['counter'] = counter
+            safe_auto_refresh(user_table.refresh)()
+
+    ui.timer(1.0, _on_event)
 
 
 # ================================================================== roles tab

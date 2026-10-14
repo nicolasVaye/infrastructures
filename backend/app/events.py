@@ -113,7 +113,16 @@ async def _event_stream() -> AsyncIterator[str]:
         # Initial comment so the client stream is opened immediately
         yield ": connected\n\n"
         while True:
-            raw = await queue.get()
+            try:
+                raw = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                # Keepalive comment every 15s: proves the connection is
+                # alive end-to-end AND lets clients with a read-timeout
+                # detect a dead stream within seconds instead of hanging
+                # on a socket that will never deliver again (silent death
+                # after a proxy hiccup or a backend restart).
+                yield ": keepalive\n\n"
+                continue
             try:
                 evt = json.loads(raw)
             except Exception:  # noqa: BLE001

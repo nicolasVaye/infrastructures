@@ -26,6 +26,9 @@ _K_MIME = "logo_mime"
 _K_DATA = "logo_data"
 _K_ICO = "logo_favicon_ico"
 _K_VERSION = "logo_version"
+# Application display timezone (audit log, connected sessions…). All
+# timestamps stay stored as UTC; this only drives how the frontend renders them.
+_K_TZ = "app_timezone"
 
 _ACCEPTED_MIMES = ("image/svg+xml", "image/png", "image/jpeg")
 _MAX_LOGO_BYTES = 2 * 1024 * 1024  # 2 MB
@@ -42,8 +45,23 @@ class LogoIn(BaseModel):
 
 class LogoOut(BaseModel):
     mime: str
-    data: str  # base64-encoded image bytes
+    data: str  # base64 image bytes
     version: int
+
+
+class TimezoneIn(BaseModel):
+    timezone: str
+
+
+def _valid_timezone(name: str) -> bool:
+    """True when the name is an IANA zone the backend can resolve."""
+    if name == "UTC":
+        return True
+    try:
+        from zoneinfo import available_timezones
+        return name in available_timezones()
+    except ImportError:  # pragma: no cover  slim images without tzdata
+        return False
 
 
 async def _get_setting(session, key: str) -> str | None:
@@ -136,4 +154,26 @@ async def reset_logo(admin: AdminUser, session: DbSession) -> None:
     """Remove the custom logo; the frontend falls back to the bundled asset."""
     await session.execute(delete(SettingRecord).where(
         SettingRecord.key.in_([_K_MIME, _K_DATA, _K_ICO])))
+
+
+@router.get("/app/timezone")
+async def get_timezone(session: DbSession) -> dict:
+    """Public: the display timezone configured by the admin (default UTC).
+
+    The audit log and the sessions list render their timestamps client-side
+    with this zone; the underlying storage always remains UTC.
+    """
+    tz = await _get_setting(session, _K_TZ)
+    return {"timezone": tz or "UTC"}
+
+
+@router.put("/app/timezone", status_code=201)
+async def set_timezone(body: TimezoneIn, admin: AdminUser, session: DbSession) -> dict:
+    """Set the application display timezone (admin only, IANA names)."""
+    tz = (body.timezone or "UTC").strip()
+    if not _valid_timezone(tz):
+        raise HTTPException(400, f"Unknown timezone: {tz}")
+    await _set_setting(session, _K_TZ, tz)
+    await session.commit()
+    return {"timezone": tz}
     await session.commit()

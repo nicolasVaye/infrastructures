@@ -86,12 +86,59 @@ def _general_panel() -> None:
             ui.label(f"{t('appsettings.log_file')}:").classes('text-sm text-muted')
             ui.label(str(LOG_FILE)).classes('text-sm').style('font-family: monospace;')
 
+    _timezone_panel()
     _logo_panel()
 
 
 
 _MAX_LOGO_BYTES = 2 * 1024 * 1024  # mirrors the backend limit
 _LOGO_MIMES = ('image/svg+xml', 'image/png', 'image/jpeg')
+
+
+def _timezone_panel() -> None:
+    """Display timezone for the audit log and the connected sessions list.
+
+    All timestamps stay stored as UTC; this only changes how the frontend
+    renders them (GET/PUT /app/timezone → app_settings table).
+    """
+    from core.database import get_session
+    from services import tz as tz_service
+
+    state = {'value': tz_service.get_app_timezone()}
+
+    def _options() -> list[str]:
+        # The stored zone is always offered, even when not in the curated
+        # list (a previous admin may have picked an exotic one).
+        opts = list(tz_service.COMMON_TIMEZONES)
+        if state['value'] not in opts:
+            opts.insert(1, state['value'])
+        return opts
+
+    def _on_change(e) -> None:
+        value = e.value or 'UTC'
+        try:
+            with get_session() as session:
+                session.put('/app/timezone', json={'timezone': value})
+        except Exception:  # noqa: BLE001  backend unreachable / auth expired
+            notify(t('appsettings.timezone_bad'), type='negative')
+            return
+        state['value'] = value
+        tz_service.invalidate_cache()
+        notify(t('appsettings.timezone_saved').format(tz=value), type='positive')
+
+    with ui.column().classes('card w-full gap-1 p-6 mt-4').style('max-width: 640px;'):
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('schedule', size='sm').classes('text-muted')
+            ui.label(t('appsettings.timezone')).classes('card-title')
+        ui.label(t('appsettings.timezone_desc')).classes('card-description mb-4')
+
+        with ui.element('div').classes('w-full'):
+            ui.label(t('appsettings.timezone')).classes('field-label')
+            ui.select(
+                _options(),
+                value=state['value'],
+                on_change=_on_change,
+            ).props('outlined dense').classes('w-full').style('max-width: 260px;')
 
 
 def _logo_panel() -> None:
