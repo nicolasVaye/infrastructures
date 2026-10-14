@@ -147,10 +147,13 @@ def content() -> None:
                                 # Card top: ID + priority
                                 with ui.row().classes('items-center justify-between mb-2'):
                                     ui.label(f"#{j['id']}").classes('font-semi text-sm')
-                                    with ui.row().classes('items-center gap-1'):
+                                    with ui.row().classes('items-center gap-1') as _prio:
+                                        _prio.tooltip(t('jobs.priority_hint').format(p=j['priority']))
                                         ui.icon('low_priority').style(
-                                            'font-size:12px;color:var(--faint-fg)')
-                                        ui.label(f"p{j['priority']}").classes('text-xs text-faint')
+                                            'font-size:12px;color:var(--faint-fg)') \
+                                            .tooltip(t('jobs.priority_hint').format(p=j['priority']))
+                                        ui.label(f"p{j['priority']}").classes('text-xs text-faint') \
+                                            .tooltip(t('jobs.priority_hint').format(p=j['priority']))
 
                                 # Job type
                                 with ui.row().classes('items-center gap-2 mb-1'):

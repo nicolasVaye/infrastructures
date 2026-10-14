@@ -181,7 +181,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
 
     # Audit log view
     'audit.title':        {'en': 'Audit Log', 'de': 'Audit-Protokoll'},
-    'sessions.title':     {'en': 'Sessions', 'de': 'Sitzungen'},
     'audit.subtitle':     {'en': 'A chronological record of who did what across the app.', 'de': 'Chronologische Aufzeichnung, wer was in der App getan hat.'},
     'audit.admin_only':   {'en': 'The audit log is available to administrators only.', 'de': 'Das Audit-Protokoll ist nur für Administratoren verfügbar.'},
     'audit.empty':        {'en': 'No activity recorded yet.', 'de': 'Noch keine Aktivität aufgezeichnet.'},
@@ -264,7 +263,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'jobs.filtered_on':  {'en': 'Filtered on: {status}', 'de': 'Gefiltert nach: {status}'},
     'jobs.clear_filter': {'en': 'Clear filter', 'de': 'Filter zurücksetzen'},
     'jobs.empty':        {'en': 'No job submitted yet — use the "Submit job" page.',
+                         'de': 'Noch kein Job übermittelt — nutze die Seite „Job übermitteln“.'},
     'jobs.details':         {'en': 'Details', 'de': 'Details'},
+    'jobs.priority_hint':   {'en': 'Priority: workers claim jobs from p5 (last) to p1 (first). This job runs at priority {p}.',
+                             'de': 'Priorität: Worker holen Jobs von p5 (zuletzt) bis p1 (zuerst). Dieser Job läuft mit Priorität {p}.'},
     'jobs.type.demo_sleep':  {'en': 'Demo action: sleeps for the requested duration.',
                               'de': 'Demo-Aktion: schläft für die angegebene Dauer.'},
     'jobs.params.demo_sleep': {'en': "params: seconds — how long to sleep (default 5).",
@@ -299,7 +301,6 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'jobs.tip.disable':     {'en': 'Disable schedule', 'de': 'Zeitplan deaktivieren'},
     'jobs.tip.edit':        {'en': 'Edit schedule', 'de': 'Zeitplan bearbeiten'},
     'jobs.tip.delete':      {'en': 'Delete schedule', 'de': 'Zeitplan löschen'},
-                          'de': 'Noch kein Job übermittelt — nutze die Seite „Job übermitteln“.'},
     'jobs.submit_new':   {'en': 'Submit a new job', 'de': 'Neuen Job übermitteln'},
     'jobs.cancel':       {'en': 'Cancel', 'de': 'Abbrechen'},
     'jobs.cancel_title': {'en': 'Cancel job', 'de': 'Job abbrechen'},
