@@ -6,6 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
     "infrastructures-shared",
     "nicegui[highcharts]==3.18.0",
+    # Pinned so the engineio/socketio caps raised for NiceGUI 3.x are always
+    # installed (the old zauberzeug image did this with an ad-hoc pip upgrade).
+    "python-engineio>=4.10",
+    "python-socketio>=5.11",
     "sqlalchemy>=2.0",
 ]
 

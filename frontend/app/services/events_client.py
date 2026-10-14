@@ -74,6 +74,12 @@ def handle_event(evt: dict) -> None:
         counter = app.storage.client.get('schedules_refresh_counter', 0)
         app.storage.client['schedules_refresh_counter'] = counter + 1
 
+    elif etype == 'sessions_changed':
+        # A login/logout/kick (this tab, another tab, or another admin)
+        # changed who is connected: let the Sessions tab refresh instantly.
+        counter = app.storage.client.get('sessions_refresh_counter', 0)
+        app.storage.client['sessions_refresh_counter'] = counter + 1
+
 
 async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:
     """One SSE connection per tab; pushes parsed events into ``queue``.

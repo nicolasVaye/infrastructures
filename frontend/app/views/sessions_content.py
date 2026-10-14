@@ -199,4 +199,20 @@ def content() -> None:
 
     sessions_table()
 
-    ui.timer(15.0, safe_auto_refresh(sessions_table.refresh))
+    # NO fast polling: logins/logouts/kicks (this tab, another tab, another
+    # admin — even another backend replica) push a 'sessions_changed' SSE
+    # event that bumps this counter, and the table refreshes only then.
+    # The slow 60s fallback below is just for silent TTL expiry: a session
+    # that dies without a logout event (closed browser) never emits anything,
+    # and 'connected' is defined by heartbeat freshness the server can't
+    # know in advance. Tooltips and hover states are no longer disturbed.
+    seen = {'counter': app.storage.client.get('sessions_refresh_counter', 0)}
+
+    def _on_event() -> None:
+        counter = app.storage.client.get('sessions_refresh_counter', 0)
+        if counter != seen['counter']:
+            seen['counter'] = counter
+            safe_auto_refresh(sessions_table.refresh)()
+
+    ui.timer(1.0, _on_event)
+    ui.timer(60.0, safe_auto_refresh(sessions_table.refresh))

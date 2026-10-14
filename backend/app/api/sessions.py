@@ -34,5 +34,7 @@ async def kick_session(session_id: str, admin: AdminUser, session: DbSession) ->
     if not await revoke_session(session, session_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found or already revoked")
     await notify_event(session, "session_revoked", session_id=session_id)
+    # Live sessions list: a kick changes who is connected.
+    await notify_event(session, "sessions_changed")
     await record(session, AuditAction.SESSION_REVOKED, user_id=admin.id,
                  username=admin.username, target=session_id)

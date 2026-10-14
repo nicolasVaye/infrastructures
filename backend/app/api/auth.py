@@ -86,6 +86,9 @@ async def login(body: LoginRequest, request: Request, session: DbSession) -> Tok
     access, refresh, ttl = create_token_pair(user.id, session_record.id)
     await record(session, AuditAction.LOGIN, user_id=user.id,
                  username=user.username, ip=client_ip(request))
+    # Live sessions list: a login changes who is connected — push it so the
+    # Sessions tab refreshes instantly (SSE) instead of on its slow poll.
+    await notify_event(session, "sessions_changed")
 
     # Commit BEFORE returning: the dependency teardown commits only after
     # the response is on the wire, and the client calls /auth/me (or the
@@ -217,6 +220,7 @@ async def oidc_callback(idp_id: int, body: OIDCCallbackIn, request: Request,
     access, refresh, ttl = create_token_pair(user.id, session_record.id)
     await record(session, AuditAction.OIDC_LOGIN, user_id=user.id,
                  username=user.username, target=idp.name, ip=client_ip(request))
+    await notify_event(session, "sessions_changed")
     # Same commit-before-return as /auth/login: the callback page fires a
     # heartbeat with the fresh token immediately after this response.
     await session.commit()
@@ -291,6 +295,7 @@ async def logout(
     payload = decode_token(credentials.credentials)
     revoked = await revoke_session(session, payload["sid"])
     await notify_event(session, "session_revoked", session_id=payload["sid"])
+    await notify_event(session, "sessions_changed")
     await record(session, AuditAction.LOGOUT, user_id=user.id,
                  username=user.username, ip=client_ip(request))
     return {"status": "logged out", "session_revoked": revoked}

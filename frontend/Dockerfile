@@ -1,24 +1,26 @@
 # Frontend: NiceGUI app — pure REST client of the backend (stateless).
-FROM zauberzeug/nicegui:latest
+# Same layout as the backend: python:3.12-slim + uv, so every dependency
+# (including NiceGUI) comes from frontend/pyproject.toml + frontend/uv.lock
+# instead of floating with the zauberzeug/nicegui base image.
+FROM python:3.12-slim
 
-# Pin the NiceGUI version actually shipped in the image: reproducible builds.
-# The base image is `latest`, so its bundled version floats — this pip install
-# is what really decides the version at runtime. Bump the pin here AND in
-# frontend/pyproject.toml together (>=3.12.0 also covers the Dependabot
-# advisories: restructured_text file read, upload filename sanitization,
-# /_nicegui/ static-route log amplification).
-RUN pip install --upgrade python-engineio python-socketio "nicegui[highcharts]==3.18.0"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-WORKDIR /app
+# Shared package (DTOs + API clients) + lockfile-anchored dependency install.
+# uv.lock is the committed lockfile: with it present, `uv sync` installs the
+# exact same dependency tree on every build (see `make lock` / README).
+COPY shared/ /srv/shared/
+COPY frontend/pyproject.toml frontend/uv.lock* /srv/frontend/
 
-# Shared package (DTOs + API clients): install the source tree directly
-# alongside the app so `import shared` works without any build backend.
-COPY shared/src/shared/ /app/shared/
+WORKDIR /srv/frontend
+RUN uv sync --no-dev --no-install-project
 
-COPY frontend/app/ /app/
+COPY frontend/app/ /srv/frontend/app/
 
 EXPOSE 8080
 
 # STORAGE_SECRET is required for signed browser sessions.
 # BACKEND_URL points to the FastAPI service (docker-compose network name).
-CMD ["python", "main.py"]
+# Run from the app dir (imports are flat: views/, services/, components/...).
+WORKDIR /srv/frontend/app
+CMD ["/srv/frontend/.venv/bin/python", "main.py"]

@@ -13,8 +13,8 @@ down:  ## Stop the stack
 	docker compose --profile keycloak down
 
 outdated:  ## List available upgrades for installed packages (frontend + backend)
-	@echo "── frontend (pip) ──────────────────────────────"
-	@docker compose exec frontend pip list --outdated 2>/dev/null || \
+	@echo "── frontend (uv) ───────────────────────────────"
+	@docker compose exec frontend uv pip list --outdated 2>/dev/null || \
 	  echo "(frontend not running — run 'make up' first)"
 	@echo ""
 	@echo "── backend / workers (uv) ──────────────────────"
@@ -22,19 +22,18 @@ outdated:  ## List available upgrades for installed packages (frontend + backend
 	  echo "(backend not running — run 'make up' first)"
 
 versions:  ## Show the versions actually running in the containers
-	@docker compose exec frontend pip show nicegui 2>/dev/null | grep -E '^(Name|Version)'
+	@docker compose exec frontend uv pip list 2>/dev/null | head -30
 	@docker compose exec backend uv pip list 2>/dev/null | head -30
 
-# Backend: uv resolves pyproject.toml and writes backend/uv.lock — commit it!
-# The Dockerfile already copies uv.lock when present, so a committed lock
-# makes every image build install the exact same dependency tree.
-lock:  ## (re)generate backend/uv.lock from pyproject — run in backend/, commit the file
+# Both components resolve from their pyproject.toml and write uv.lock —
+# commit the lockfiles! The Dockerfiles copy uv.lock when present, so a
+# committed lock makes every image build install the exact same tree.
+lock:  ## (re)generate backend/uv.lock + frontend/uv.lock → commit both
 	cd backend && uv lock
+	cd frontend && uv lock
 
-upgrade:  ## Refresh backend/uv.lock to the newest compatible versions
+upgrade:  ## Refresh both lockfiles to the newest compatible versions
 	cd backend && uv lock --upgrade
-
-# Frontend: the image installs from the pinned versions in frontend/Dockerfile
-# (nicegui) — bump the pin there and in frontend/pyproject.toml together.
+	cd frontend && uv lock --upgrade
 
 .PHONY: help up down outdated versions lock upgrade

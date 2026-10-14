@@ -68,6 +68,7 @@ def _users_tab(current_username: str) -> None:
                     'must_change_password': u.must_change_password,
                     'auth_provider': u.auth_provider,
                     'idp_name': u.idp_name,
+                    'avatar': u.avatar,
                 }
                 for u in UserService(session).get_all_users()
             ]

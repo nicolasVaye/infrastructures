@@ -138,10 +138,10 @@ reproductibilité totale (arbre de dépendances complet, versions transitives in
   le `Dockerfile` le copie quand il est présent, et `uv sync` installe alors exactement
   le même arbre à chaque build. Sans lock, uv résout depuis `pyproject.toml` à chaque
   build (marche, mais non reproductible).
-- **Frontend** : l'image de base `zauberzeug/nicegui:latest` flotte — la version de
-  NiceGUI **réellement embarquée** est celle du `pip install` épinglé dans
-  `frontend/Dockerfile` (`nicegui[highcharts]==3.18.0`). Bump à faire au même
-  endroit que dans `frontend/pyproject.toml`.
+- **Frontend** : même layout que le backend — image `python:3.12-slim` + `uv` ; toutes
+  les dépendances (NiceGUI inclus, épinglé `==3.18.0`) viennent de
+  `frontend/pyproject.toml` + `frontend/uv.lock` (à commiter). Bump de NiceGUI :
+  uniquement dans `frontend/pyproject.toml` (pas d'autre endroit).
 
 ### Commandes utiles (voir `Makefile`, `make help`)
 
