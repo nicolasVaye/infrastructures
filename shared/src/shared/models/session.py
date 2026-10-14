@@ -22,3 +22,4 @@ class SessionOut(BaseModel):
     expires_at: datetime
     auth_provider: str = "local"
     idp_name: str | None = None
+    avatar: str | None = None

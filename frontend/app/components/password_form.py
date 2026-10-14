@@ -19,20 +19,20 @@ class PasswordChangeForm:
     def __init__(
         self,
         *,
-        new_label: str = 'New password',
-        confirm_label: str = 'Confirm password',
+        new_label_key: str = 'settings.new_password',
+        confirm_label_key: str = 'settings.confirm_password',
         on_change: Callable[[], None] | None = None,
         on_submit: Callable[[], None] | None = None,
     ) -> None:
         self._on_change = on_change
 
         with ui.element('div').classes('w-full'):
-            ui.label(new_label).classes('field-label')
+            i18n.bind(ui.label().classes('field-label'), new_label_key)
             self.new_pw = ui.input(password=True, password_toggle_button=True) \
                 .classes('w-full').props(f'outlined dense maxlength={MAX_PASSWORD_LENGTH}')
 
         with ui.element('div').classes('w-full'):
-            ui.label(confirm_label).classes('field-label')
+            i18n.bind(ui.label().classes('field-label'), confirm_label_key)
             self.confirm_pw = ui.input(password=True, password_toggle_button=True) \
                 .classes('w-full').props(f'outlined dense maxlength={MAX_PASSWORD_LENGTH}')
             if on_submit is not None:

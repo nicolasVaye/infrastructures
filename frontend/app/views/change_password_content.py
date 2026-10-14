@@ -16,6 +16,7 @@ from core.database import get_session
 from models.audit import AuditAction
 from services.audit_service import record as audit_record
 from services.i18n import t
+from services import i18n
 from services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,9 @@ async def change_password_page() -> None:
 
                     form = PasswordChangeForm(on_change=_sync_button, on_submit=submit)
 
-                    save_btn = ui.button('Save password', on_click=submit, color='white') \
-                        .props('no-caps').classes('button button-primary w-full mt-4')
+                    save_btn = i18n.bind(
+                        ui.button(t('changepw.save'), on_click=submit, color='white')
+                        .props('no-caps').classes('button button-primary w-full mt-4'),
+                        'changepw.save',
+                    )
                     save_btn.disable()

@@ -279,8 +279,8 @@ def content() -> None:
 
                 with ui.column().classes('w-full mt-2'):
                     form = PasswordChangeForm(
-                        new_label=t('settings.new_password'),
-                        confirm_label=t('settings.confirm_password'),
+                        new_label_key='settings.new_password',
+                        confirm_label_key='settings.confirm_password',
                         on_change=_sync_button,
                         on_submit=_update_password,
                     )

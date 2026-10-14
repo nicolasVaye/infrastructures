@@ -94,13 +94,20 @@ def _users_tab(current_username: str) -> None:
                 ):
                     # User
                     with ui.row().classes('flex-1 items-center gap-3 min-w-0'):
-                        with ui.element('div').classes(
-                            'flex items-center justify-center rounded-full'
-                        ).style(
-                            'width: 32px; height: 32px; background: #f4f4f5; '
-                            'color: #18181b; font-weight: 600; flex-shrink: 0;'
-                        ):
-                            ui.label(u['username'][:1].upper())
+                        if u.get('avatar'):
+                            # Profile photo (data URL) — round, like the header.
+                            ui.image(u['avatar']).style(
+                                'width: 32px; height: 32px; border-radius: 50%; '
+                                'object-fit: cover; flex-shrink: 0;'
+                            )
+                        else:
+                            with ui.element('div').classes(
+                                'flex items-center justify-center rounded-full'
+                            ).style(
+                                'width: 32px; height: 32px; background: #f4f4f5; '
+                                'color: #18181b; font-weight: 600; flex-shrink: 0;'
+                            ):
+                                ui.label(u['username'][:1].upper())
                         with ui.column().classes('gap-0 min-w-0'):
                             ui.label(u['username']).classes('truncate').style('font-weight: 500;')
                             # Federated accounts have no local password: the

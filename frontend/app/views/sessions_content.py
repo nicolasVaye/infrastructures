@@ -116,7 +116,14 @@ def content() -> None:
                 with ui.row().classes('w-full items-center px-4 py-3 no-wrap').style(
                     'border-bottom: 1px solid var(--border, #f4f4f5);'
                 ):
-                    ui.icon('person', size='1rem').classes('text-muted')
+                    if s.get('avatar'):
+                        # Profile photo (data URL) of the session's user.
+                        ui.image(s['avatar']).style(
+                            'width: 28px; height: 28px; border-radius: 50%; '
+                            'object-fit: cover; flex-shrink: 0;'
+                        )
+                    else:
+                        ui.icon('person', size='1rem').classes('text-muted')
                     with ui.column().classes('flex-1 gap-0'):
                         with ui.row().classes('items-center gap-2'):
                             ui.label(s['username']).classes('truncate')

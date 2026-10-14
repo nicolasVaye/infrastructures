@@ -128,6 +128,10 @@ class SessionRecord(Base):
     def idp_name(self) -> str | None:
         return self.user.idp_ref.name if self.user.idp_ref else None
 
+    @property
+    def avatar(self) -> str | None:
+        return self.user.avatar
+
 
 class AuditLogRecord(Base):
     __tablename__ = "audit_log"

@@ -467,7 +467,7 @@ def content() -> None:
 
     with ui.row().classes('w-full justify-end'):
         ui.button(t('jobs.submit_new'), icon='add',
-                  on_click=_open_submit_dialog).props('outline no-caps')
+                  on_click=_open_submit_dialog).classes('button button-primary')
 
     schedules_panel()
     # A refresh while a job-details dialog is open would close it (the dialog

@@ -435,6 +435,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'changepw.desc':    {'en': 'You must choose a new password before continuing.',
                          'de': 'Du musst ein neues Passwort festlegen, bevor du fortfährst.',
                          'fr': "Vous devez choisir un nouveau mot de passe avant de continuer."},
+    'changepw.save':    {'en': 'Save password', 'de': 'Passwort speichern',
+                         'fr': 'Enregistrer le mot de passe'},
 
     # Common actions & words
     'common.export':      {'en': 'Export', 'de': 'Exportieren', 'fr': "Exporter"},
