@@ -52,13 +52,14 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    from app.api import audit, auth, idps, jobs, sessions, users
+    from app.api import audit, auth, idps, jobs, sessions, settings, users
     app.include_router(auth.router)
     app.include_router(users.router)
     app.include_router(sessions.router)
     app.include_router(audit.router)
     app.include_router(jobs.router)
     app.include_router(idps.router)
+    app.include_router(settings.router)
 
     # Real-time change events (SSE) — see app/events.py
     from app import events

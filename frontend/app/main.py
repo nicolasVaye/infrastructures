@@ -85,6 +85,60 @@ async def avatar() -> Response:
         headers={'Cache-Control': 'private, max-age=86400'},
     )
 
+
+# Application logo, straight from the backend's app_settings table (uploaded
+# by the admin on the App Settings page). Public and unauthenticated: the
+# browser needs it for the favicon and the login page BEFORE any sign-in.
+# Falls back to the bundled asset when no custom logo is configured.
+_LOGO_FALLBACK = Path(__file__).parent / 'assets' / 'images' / 'logo.svg'
+_FAVICON_FALLBACK = Path(__file__).parent / 'assets' / 'icons' / 'icon-192.png'
+
+
+def _backend_logo(path: str) -> tuple[bytes, str] | None:
+    """Fetch a logo payload from the backend (unauthenticated, public route)."""
+    import base64 as _b64
+
+    import httpx
+    from core.database import BACKEND_URL
+
+    try:
+        r = httpx.get(f'{BACKEND_URL}{path}', timeout=5.0)
+    except Exception:  # noqa: BLE001 — backend down: use the bundled asset
+        return None
+    if r.status_code != 200:
+        return None
+    try:
+        body = r.json()
+        raw = _b64.b64decode(body['data'])
+        mime = body.get('mime') or 'image/png'
+    except Exception:  # noqa: BLE001 — malformed payload
+        return None
+    return raw, mime
+
+
+@app.get('/logo')
+async def logo() -> Response:
+    fetched = _backend_logo('/app/logo')
+    if fetched is None:
+        return FileResponse(_LOGO_FALLBACK, media_type='image/svg+xml',
+                            headers={'Cache-Control': 'no-cache'})
+    raw, mime = fetched
+    return Response(content=raw, media_type=mime,
+                    headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/favicon.ico')
+async def favicon() -> Response:
+    """Serve the tab icon: the admin-uploaded logo (ICO generated server-side),
+    falling back to the bundled PWA icon."""
+    fetched = _backend_logo('/app/logo.ico')
+    if fetched is not None:
+        raw, _mime = fetched
+        return Response(content=raw, media_type='image/x-icon',
+                        headers={'Cache-Control': 'no-cache'})
+    return FileResponse(_FAVICON_FALLBACK, media_type='image/png',
+                        headers={'Cache-Control': 'no-cache'})
+
 from views import (
     dashboard_content,
     design_system_content,
@@ -156,6 +210,8 @@ async def pwa_service_worker() -> FileResponse:
 
 
 _PWA_HEAD = f'''<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/logo" type="image/svg+xml">
 <meta name="theme-color" content="#18181b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -196,7 +252,7 @@ def with_base_layout(route_handler):
         ui.add_head_html(_LOGOUT_WATCHER_JS, shared=True)
 
         # Preload avoids a layout-shift flash when the sidebar logo first renders
-        ui.add_head_html('<link rel="preload" href="/assets/images/logo.svg" as="image">')
+        ui.add_head_html('<link rel="preload" href="/logo" as="image">')
 
         if 'sidebar-collapsed' not in app.storage.user:
             app.storage.user['sidebar-collapsed'] = False

@@ -172,6 +172,15 @@ class JobRecord(Base):
     )
 
 
+class SettingRecord(Base):
+    """Global application settings (key/value), e.g. the custom logo."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+
+
 class ScheduleRecord(Base):
     """CRON-based recurring job submission, consumed by the scheduler worker."""
 

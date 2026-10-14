@@ -483,15 +483,16 @@ body { font-size: var(--app-font-size) !important; }
 
 /* App-specific styles */
 
-/* Header account / profile button: slightly translucent panel background
-   and a stronger border so it stays readable over the header texture. */
+/* Header account / profile button: opaque panel background with a clear
+   border so it stays fully readable over the header texture. */
 .header-account-btn {
-  background: color-mix(in srgb, var(--panel-bg) 72%, transparent) !important;
+  background: var(--panel-bg) !important;
   color: var(--muted-fg) !important;
   border-radius: var(--radius) !important;
   transition: background var(--transition), color var(--transition) !important;
   border: 1px solid var(--input-border) !important;
-  padding: 4px 10px !important;
+  padding: 6px 12px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
 }
 .header-account-btn:hover,
 .header-account-btn:focus {
@@ -508,13 +509,15 @@ body { font-size: var(--app-font-size) !important; }
   color: var(--fg) !important;
 }
 
-/* Vertical collapse handle on the sidebar's right border: a slim clickable
-   tab whose chevron flips with the collapsed state. */
+/* Vertical collapse handle on the sidebar's right separator: a slim fixed
+   tab whose chevron flips with the collapsed state. Rendered outside the
+   drawer (position:fixed) so it always straddles the border; its left
+   offset is synced from Python with the two possible drawer widths. */
 .sidebar-collapse-handle {
-  position: absolute;
+  position: fixed;
   top: 50%;
-  right: -1px;
   transform: translateY(-50%);
+  left: 233px;
   width: 14px;
   height: 88px;
   display: flex;
@@ -526,8 +529,9 @@ body { font-size: var(--app-font-size) !important; }
   border-right: none;
   border-radius: 8px 0 0 8px;
   color: var(--muted-fg);
-  z-index: 10;
-  transition: background var(--transition), color var(--transition), height var(--transition);
+  z-index: 3000;
+  transition: left 0.3s ease-in-out, background var(--transition),
+              color var(--transition), height var(--transition);
 }
 .sidebar-collapse-handle:hover,
 .sidebar-collapse-handle:active {
@@ -538,6 +542,10 @@ body { font-size: var(--app-font-size) !important; }
 .sidebar-collapse-handle-icon {
   font-size: 14px !important;
   transition: transform 0.3s ease-in-out;
+}
+/* On mobile the drawer overlays the page, so the handle makes no sense */
+@media (max-width: 1023.98px) {
+  .sidebar-collapse-handle { display: none !important; }
 }
 
 .account-dropdown {

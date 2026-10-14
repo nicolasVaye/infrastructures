@@ -10,6 +10,7 @@ from nicegui import app, ui
 from components.notifications import notify
 from core.logging_config import LOG_FILE, LOG_LEVELS, get_log_level, set_log_level
 from models.enums import UserRole
+from services import i18n
 from services.i18n import t
 from views._common import page_header
 
@@ -84,3 +85,95 @@ def _general_panel() -> None:
         with ui.row().classes('items-center gap-2 mt-4'):
             ui.label(f"{t('appsettings.log_file')}:").classes('text-sm text-muted')
             ui.label(str(LOG_FILE)).classes('text-sm').style('font-family: monospace;')
+
+    _logo_panel()
+
+
+
+_MAX_LOGO_BYTES = 2 * 1024 * 1024  # mirrors the backend limit
+_LOGO_MIMES = ('image/svg+xml', 'image/png', 'image/jpeg')
+
+
+def _logo_panel() -> None:
+    """Application logo: upload SVG/PNG/JPG, persisted in the backend DB.
+
+    The logo is served by GET /logo (header, login page) and the browser tab
+    icon is regenerated from it (ICO built server-side for raster formats).
+    """
+    import base64
+
+    from components.dropzone import dropzone
+    from core.database import get_session
+
+    state = {'version': int(app.storage.user.get('logo_version', 0))}
+
+    @ui.refreshable
+    def logo_preview() -> None:
+        v = state['version']
+        ui.image(f'/logo?v={v}').style(
+            'width: 15rem; height: 6rem; object-fit: contain;'
+        )
+
+    async def _on_upload(e) -> None:
+        f = getattr(e, 'file', None)
+        if f is not None:
+            size = f.size() if callable(f.size) else f.size
+            if size > _MAX_LOGO_BYTES:
+                notify(t('appsettings.logo_too_large'), type='negative')
+                return
+            raw = await f.read()
+            mime = f.content_type or ''
+        else:
+            raw = e.content.read()
+            if len(raw) > _MAX_LOGO_BYTES:
+                notify(t('appsettings.logo_too_large'), type='negative')
+                return
+            mime = getattr(e, 'type', None) or ''
+        if mime == 'image/jpg':
+            mime = 'image/jpeg'
+        if mime not in _LOGO_MIMES:
+            notify(t('appsettings.logo_bad_format'), type='negative')
+            return
+        payload = {'mime': mime, 'data': base64.b64encode(raw).decode()}
+        try:
+            with get_session() as session:
+                out = session.put('/app/logo', json=payload)
+            state['version'] = (out or {}).get('version', state['version'] + 1)
+        except Exception:  # noqa: BLE001 — backend unreachable / auth expired
+            notify(t('appsettings.logo_save_failed'), type='negative')
+            return
+        # Live-reload the logo in every open tab (same pattern as the avatar).
+        app.storage.user['logo_version'] = state['version']
+        notify(t('appsettings.logo_saved'), type='positive')
+        logo_preview.refresh()
+
+    def _on_reset() -> None:
+        try:
+            with get_session() as session:
+                session.delete('/app/logo')
+        except Exception:  # noqa: BLE001
+            notify(t('appsettings.logo_save_failed'), type='negative')
+            return
+        state['version'] += 1
+        app.storage.user['logo_version'] = state['version']
+        notify(t('appsettings.logo_reset'), type='positive')
+        logo_preview.refresh()
+
+    with ui.column().classes('card w-full gap-1 p-6 mt-4').style('max-width: 640px;'):
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('image', size='sm').classes('text-muted')
+            ui.label(t('appsettings.logo')).classes('card-title')
+        ui.label(t('appsettings.logo_desc')).classes('card-description mb-4')
+
+        with ui.row().classes('items-start gap-5 w-full no-wrap'):
+            with ui.column().classes('items-center gap-2 flex-shrink-0'):
+                logo_preview()
+                i18n.bind(
+                    ui.button(t('appsettings.logo_reset_btn'), icon='restore',
+                               on_click=_on_reset)
+                    .props('flat no-caps').classes('button button-ghost button-sm'),
+                    'appsettings.logo_reset_btn',
+                )
+            with ui.column().classes('flex-1 min-w-0 gap-0'):
+                dropzone(on_upload=_on_upload, max_file_size=_MAX_LOGO_BYTES,
+                         accept='.svg,.png,.jpg,.jpeg')

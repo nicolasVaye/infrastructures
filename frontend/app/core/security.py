@@ -81,7 +81,7 @@ async def logout() -> None:
 
 
 # Route access control
-unrestricted_page_routes = {'/login', '/health', '/favicon.ico', '/manifest.json', '/sw.js', '/auth/oidc/callback'}
+unrestricted_page_routes = {'/login', '/health', '/favicon.ico', '/logo', '/manifest.json', '/sw.js', '/auth/oidc/callback'}
 
 _PUBLIC_ASSET_PREFIXES = (
     '/assets/css/',

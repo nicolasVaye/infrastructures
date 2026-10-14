@@ -119,7 +119,7 @@ def content(searchFilter=None) -> None:
                        'itemWidth': 10, 'itemHeight': 10, 'itemGap': 16},
             'grid': {'left': '2%', 'right': '2%', 'bottom': '2%', 'top': '14%', 'containLabel': True},
             'xAxis': {'type': 'category', 'data': _THROUGHPUT['hours'], 'boundaryGap': False, **_AX()},
-            'yAxis': {**_AX(), **_SL, 'type': 'value', 'name': 'units / h',
+            'yAxis': {**_AX(), **_SL(), 'type': 'value', 'name': 'units / h',
                       'axisLabel': {'color': _cc()['label'], 'fontSize': 11}},
             'series': [
                 {'name': 'Line A', 'type': 'line', 'smooth': True,

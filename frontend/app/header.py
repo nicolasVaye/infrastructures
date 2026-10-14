@@ -42,13 +42,29 @@ def frame(title: str, version: str, get_logo_func=None):
             await ui.run_javascript('new Promise(resolve => setTimeout(resolve, 50))')
             left_drawer.props("width=100")
         # The vertical handle sits on the sidebar's right border; its chevron
-        # reflects the resulting state (wide -> collapse to the left).
-        handle_icon.name = 'chevron_left' if collapsed else 'chevron_right'
+        # and position reflect the resulting state (wide -> collapse to the left).
+        _sync_handle(collapsed)
 
     # Header toolbar
     with ui.header().classes(replace='row items-center h-20 justify-start') as header:
         ui.label("").classes('pr-4 md:pr-8')
-        ui.html('<div style="width: 4rem; height: 4rem; background-image: url(\'/assets/images/logo.svg\'); background-size: contain; background-repeat: no-repeat; background-position: center;"></div>', sanitize=False)
+
+        # Application logo, served by GET /logo (custom logo from the admin
+        # settings, or the bundled asset). Refreshable so every tab live-
+        # reloads it when an admin uploads a new one (logo_version counter,
+        # same pattern as the account widget below).
+        @ui.refreshable
+        def logo_widget() -> None:
+            v = app.storage.user.get('logo_version', 0)
+            ui.html(
+                '<div style="width: 4rem; height: 4rem;'
+                f'background-image: url(\'/logo?v={v}\');'
+                'background-size: contain; background-repeat: no-repeat;'
+                'background-position: center;"></div>',
+                sanitize=False,
+            )
+        logo_widget()
+
         ui.label("").classes("pr-2")
         ui.label(title).classes('app-name')
         ui.space()
@@ -100,6 +116,13 @@ def frame(title: str, version: str, get_logo_func=None):
                     app.storage.user.get('profile_version', 0)
                 if app.storage.user.get('authenticated', False):
                     account_widget.refresh()
+            # Same cross-tab pattern for the application logo: the settings
+            # page bumps 'logo_version' after an upload/reset.
+            if app.storage.user.get('logo_version', 0) != \
+                    app.storage.client.get('logo_version_seen', -1):
+                app.storage.client['logo_version_seen'] = \
+                    app.storage.user.get('logo_version', 0)
+                logo_widget.refresh()
 
         ui.timer(2.0, _watch_profile)
 
@@ -229,12 +252,6 @@ def frame(title: str, version: str, get_logo_func=None):
             version_label = ui.label(version).classes('text-xs text-muted sidebar-label mr-2')
             sidebar_labels.append(version_label)
 
-        # Vertical collapse handle sitting on the sidebar's right border:
-        # a slim clickable tab with a chevron that flips with the state.
-        # Replaces the old bottom "collapse" button.
-        with ui.element('div').classes('sidebar-collapse-handle').on('click', lambda: toggle_sidebar()):
-            handle_icon = ui.icon('chevron_left').classes('sidebar-collapse-handle-icon')
-
         def apply_highlight(active_item) -> None:
             for item in nav_links:
                 item['link'].classes(remove='nav-link-active')
@@ -246,8 +263,10 @@ def frame(title: str, version: str, get_logo_func=None):
         for nav_item in nav_links:
             nav_item['link'].on('click', lambda _, i=nav_item: apply_highlight(i))
 
-        # highlight the correct item when a page is opened via a direct URL
-        async def init_highlight() -> None:
+        # highlight the correct item whenever the URL changes. Polling (rather
+        # than only on_connect) also covers navigations that do not create a
+        # new websocket, e.g. opening /settings from the header account menu.
+        async def _highlight_from_path() -> None:
             try:
                 path = await ui.run_javascript('window.location.pathname')
             except Exception:
@@ -259,20 +278,45 @@ def frame(title: str, version: str, get_logo_func=None):
                         apply_highlight(item)
                         return
 
+        async def _watch_path() -> None:
+            nonlocal _current_path
+            try:
+                path = await ui.run_javascript('window.location.pathname')
+            except Exception:
+                return
+            if path != _current_path:
+                _current_path = path
+                await _highlight_from_path()
+
+        _current_path = None
+        ui.timer(1.0, _watch_path)
+
         # on_connect fires only for a real WebSocket, so bots never reach this
-        ui.context.client.on_connect(init_highlight)
+        ui.context.client.on_connect(_highlight_from_path)
+
+    # Vertical collapse handle straddling the sidebar's right separator.
+    # Rendered OUTSIDE the drawer with position:fixed, otherwise the drawer's
+    # scrollable content area pushes it below the nav links; the left offset
+    # tracks the two possible drawer widths (240 wide / 100 collapsed).
+    with ui.element('div').classes('sidebar-collapse-handle') \
+            .on('click', lambda: toggle_sidebar()) as handle:
+        handle_icon = ui.icon('chevron_left').classes('sidebar-collapse-handle-icon')
+
+    def _sync_handle(collapsed: bool) -> None:
+        handle.style(f'left: {(240 if collapsed else 100) - 7}px;')
+        handle_icon.name = 'chevron_left' if collapsed else 'chevron_right'
 
     # sync drawer width and label visibility to the persisted state
     if app.storage.user['sidebar-collapsed']:
         left_drawer.props("width=240")
-        handle_icon.name = 'chevron_left'
+        _sync_handle(True)
         for label in sidebar_labels:
             label.classes(add='expanded')
         for tip in sidebar_hints:
             tip.set_visibility(False)
     else:
         left_drawer.props("width=100")
-        handle_icon.name = 'chevron_right'
+        _sync_handle(False)
         for label in sidebar_labels:
             label.classes(add='collapsed')
         for tip in sidebar_hints:
