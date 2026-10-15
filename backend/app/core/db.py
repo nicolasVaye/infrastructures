@@ -194,6 +194,43 @@ class ScheduleRecord(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ActivityRecord(Base):
+    """One user navigation in the frontend (sub-page visited).
+
+    Written by POST /activity on every path change; aggregated by
+    GET /activity/users into the per-user 4-hour mini bar chart. Rows older
+    than 48h are trimmed opportunistically — the raw granularity is only
+    needed for the activity sparkline, the audit log keeps the durable
+    business trail.
+    """
+
+    __tablename__ = "activity_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    path: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+
+class EventLogRecord(Base):
+    """Operational log of the realtime (SSE/LISTEN) machinery.
+
+    Anything that perturbs event delivery — dropped events (slow consumer),
+    LISTEN bridge disconnects, replay gaps — is persisted here so an admin
+    can diagnose "live updates sometimes lag" from the App Settings page
+    instead of guessing. Kept separate from the audit log, which tracks
+    business actions, not plumbing.
+    """
+
+    __tablename__ = "event_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)  # info | warning | error
+    source: Mapped[str] = mapped_column(String(32), nullable=False)  # sse | listen
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 

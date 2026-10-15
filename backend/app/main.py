@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
         )
 
     from app.api import audit, auth, idps, jobs, sessions, settings, users
+    from app.api import activity
     app.include_router(auth.router)
     app.include_router(users.router)
     app.include_router(sessions.router)
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(idps.router)
     app.include_router(settings.router)
+    app.include_router(activity.router)
 
     # Real-time change events (SSE) — see app/events.py
     from app import events

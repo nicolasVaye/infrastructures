@@ -87,8 +87,56 @@ def _general_panel() -> None:
             ui.label(str(LOG_FILE)).classes('text-sm').style('font-family: monospace;')
 
     _timezone_panel()
+    _sse_log_panel()
     _logo_panel()
 
+
+
+def _sse_log_panel() -> None:
+    """Realtime diagnostics: the backend's event_log table (SSE drops,
+    LISTEN bridge reconnects, replay gaps…). Read-only view; the backend
+    writes one row per incident (see app/events.py)."""
+    from services.tz import format_local, get_app_timezone
+
+    @ui.refreshable
+    def log_list() -> None:
+        try:
+            with get_session() as session:
+                rows = session.get('/system/events-log') or []
+        except Exception:  # noqa: BLE001 — backend unreachable
+            rows = None
+        display_tz = get_app_timezone()
+        if rows is None:
+            ui.label(t('appsettings.sse_unavailable')).classes('text-sm text-muted')
+            return
+        if not rows:
+            with ui.row().classes('items-center gap-2'):
+                ui.icon('check_circle', size='1rem').classes('text-muted')
+                ui.label(t('appsettings.sse_ok')).classes('text-sm text-muted')
+            return
+        with ui.column().classes('w-full gap-0'):
+            for r in rows:
+                with ui.row().classes('w-full items-start gap-2 py-1 no-wrap').style(
+                    'border-bottom: 1px solid var(--border, #f4f4f5);'
+                ):
+                    badge = 'badge-success' if r['level'] == 'info' else (
+                        'badge-warning' if r['level'] == 'warning' else 'badge-danger')
+                    with ui.element('span').classes(f'badge {badge}').style(
+                            'gap: 4px; min-width: 78px; justify-content: center;'):
+                        ui.label(r['level'])
+                    ui.label(format_local(r['created_at'], display_tz)) \
+                        .classes('text-xs text-muted').style('font-family: monospace;')
+                    ui.label(r['message']).classes('text-xs flex-1')
+
+    with ui.column().classes('card w-full gap-1 p-6 mt-4').style('max-width: 640px;'):
+        with ui.row().classes('items-center gap-2'):
+            ui.icon('monitor_heart', size='sm').classes('text-muted')
+            ui.label(t('appsettings.sse_log')).classes('card-title')
+            ui.space()
+            ui.button(icon='refresh', on_click=log_list.refresh) \
+                .props('flat dense').tooltip(t('common.refresh'))
+        ui.label(t('appsettings.sse_log_desc')).classes('card-description mb-3')
+        log_list()
 
 
 _MAX_LOGO_BYTES = 2 * 1024 * 1024  # mirrors the backend limit

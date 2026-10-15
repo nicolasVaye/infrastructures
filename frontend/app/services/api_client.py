@@ -145,6 +145,23 @@ async def _apply_profile_digest(data: dict) -> None:
         refresh_header()
 
 
+async def track_activity(path: str) -> None:
+    """Report one sub-page navigation for the Users-tab activity chart.
+
+    Fire-and-forget: never awaited by the caller and silent on any error —
+    the chart is a nice-to-have, it must not perturb navigation.
+    """
+    token = app.storage.user.get('access_token')
+    if not token:
+        return
+    try:
+        async with httpx.AsyncClient(base_url=BACKEND_URL, timeout=5.0) as client:
+            await client.post('/activity', json={'path': path},
+                              headers={'Authorization': f'Bearer {token}'})
+    except Exception:  # noqa: BLE001 — diagnostics only, never a UX error
+        logger.debug('Activity tracking failed for %s', path)
+
+
 async def heartbeat() -> None:
     """Tell the backend this client is still connected (who's-online).
 

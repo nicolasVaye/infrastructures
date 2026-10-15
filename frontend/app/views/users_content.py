@@ -18,6 +18,7 @@ from models.enums import UserRole
 from services.audit_service import record as audit_record
 from services.i18n import t
 from services.user_service import DEFAULT_USER_PASSWORD, UserService
+from services.tz import format_local, get_app_timezone
 from views._common import safe_auto_refresh
 
 
@@ -83,6 +84,16 @@ def _users_tab(current_username: str) -> None:
         except Exception:  # noqa: BLE001 — column stays neutral on API error
             online = None
 
+        # 4-hour activity sparklines (GET /activity/users): one bar per
+        # 10-minute bucket. Same defensive pattern as `online`.
+        try:
+            with get_session() as session:
+                activity = {a['username']: a
+                            for a in session.get('/activity/users') or []}
+        except Exception:  # noqa: BLE001
+            activity = None
+        display_tz = get_app_timezone()
+
         with ui.column().classes('card w-full gap-0 p-0'):
             # Header row
             with ui.row().classes('w-full items-center px-4 py-3 label-text').style(
@@ -92,6 +103,7 @@ def _users_tab(current_username: str) -> None:
                 ui.label(t('users.col.role')).style('width: 120px;')
                 ui.label(t('users.col.source')).style('width: 140px;')
                 ui.label(t('users.col.online')).style('width: 110px;')
+                ui.label(t('users.col.activity')).style('width: 150px;')
                 ui.label(t('users.col.status')).style('width: 120px;')
                 ui.label(t('users.col.actions')).style('width: 180px;')
 
@@ -158,6 +170,39 @@ def _users_tab(current_username: str) -> None:
                             with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
                                 ui.icon('fiber_manual_record', size='0.6rem')
                                 ui.label(t('users.offline'))
+
+                    # Activity sparkline: 24 bars = 10-minute buckets over
+                    # the last 4 hours (oldest first). Pure-CSS bars sized
+                    # inline; hover for the last-15-minutes detail.
+                    with ui.element('div').style('width: 150px;'):
+                        act = (activity or {}).get(u['username']) if activity is not None else None
+                        if act is None:
+                            ui.label('—').classes('text-xs text-muted')
+                        else:
+                            bars = act.get('bars') or []
+                            total = sum(bars)
+                            peak = max(bars) if bars else 0
+                            last_at = act.get('last_activity')
+                            tip = t('activity.tooltip').format(
+                                n4h=total,
+                                n15=act.get('last15', 0),
+                                last=format_local(last_at, display_tz) if last_at
+                                else t('activity.none'),
+                            )
+                            with ui.element('div').style(
+                                'display: flex; align-items: flex-end; gap: 1px; '
+                                'height: 30px; width: 100px; cursor: default;'
+                            ).tooltip(tip) as spark:
+                                for count in bars:
+                                    if count == 0:
+                                        height, bg = 2, 'var(--border)'
+                                    else:
+                                        height = max(4, round(count / max(peak, 1) * 28))
+                                        bg = 'var(--accent)'
+                                    ui.element('div').style(
+                                        f'width: 3px; height: {height}px; '
+                                        f'background: {bg}; border-radius: 1px;'
+                                    )
 
                     # Status
                     with ui.element('div').style('width: 120px;'):

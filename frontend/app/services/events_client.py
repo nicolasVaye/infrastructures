@@ -49,7 +49,17 @@ def handle_event(evt: dict) -> None:
     storage = app.storage.user
     etype = evt.get('type')
 
-    if etype == 'user_updated':
+    if etype == '_resync':
+        # The backend could not replay everything the tab missed (gap larger
+        # than the server-side buffer, e.g. after a long sleep of the laptop
+        # or a backend restart): bump every refresh counter so all live
+        # views rebuild from a fresh fetch. Never trust a stale cache after
+        # a disconnection longer than the replay window.
+        for key in ('sessions_refresh_counter', 'jobs_refresh_counter',
+                    'schedules_refresh_counter'):
+            storage[key] = storage.get(key, 0) + 1
+
+    elif etype == 'user_updated':
         if evt.get('user_id') == storage.get('user_id'):
             changed = (
                 bool(evt.get('has_avatar')) != bool(storage.get('has_avatar'))
@@ -89,13 +99,18 @@ def handle_event(evt: dict) -> None:
         storage['sessions_refresh_counter'] = counter + 1
 
 
-async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:
+async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
     """One SSE connection per tab; pushes parsed events into ``queue``.
 
     ``user_storage`` is the page's ``app.storage.user`` object captured at
     install time: a background task has no request context and must not go
     through ``app.storage``, but reading the captured object is safe and
     always sees the fresh access token written by the heartbeat.
+
+    ``state['last_seq']`` tracks the server's event sequence number; on every
+    (re)connection it is sent as the standard ``Last-Event-ID`` header so the
+    backend replays the events emitted during the disconnect — no more blind
+    windows between the death of a stream and its reconnection.
     """
     backend = os.environ.get('BACKEND_URL', 'http://localhost:8000')
     while True:
@@ -104,10 +119,13 @@ async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:
             if not token:
                 await asyncio.sleep(RECONNECT_DELAY)
                 continue
+            headers = {'Authorization': f'Bearer {token}'}
+            if state.get('last_seq'):
+                headers['Last-Event-ID'] = str(state['last_seq'])
             async with httpx.AsyncClient(base_url=backend, timeout=_STREAM_TIMEOUT) as client:
                 async with client.stream(
                     'GET', '/events',
-                    headers={'Authorization': f'Bearer {token}'},
+                    headers=headers,
                 ) as response:
                     if response.status_code != 200:
                         await asyncio.sleep(RECONNECT_DELAY)
@@ -124,6 +142,20 @@ async def _stream_loop(queue: asyncio.Queue, user_storage) -> None:
                                     except Exception:  # noqa: BLE001
                                         continue
                                     queue.put_nowait(evt)
+                                elif line.startswith('id: '):
+                                    # Track the sequence so the NEXT
+                                    # connection replays from here. A hole
+                                    # (event dropped server-side on a slow
+                                    # consumer) is self-healed: force a
+                                    # resync of all live views.
+                                    try:
+                                        seq = int(line[4:])
+                                        last = state.get('last_seq', 0)
+                                        if last and seq > last + 1:
+                                            queue.put_nowait({'type': '_resync'})
+                                        state['last_seq'] = seq
+                                    except ValueError:
+                                        pass
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — always reconnect
@@ -142,7 +174,9 @@ def install_event_listener() -> None:
 
     queue: _asyncio.Queue = _asyncio.Queue(maxsize=256)
     app.storage.client['events_queue'] = queue
-    task = _asyncio.create_task(_stream_loop(queue, app.storage.user))
+    state = {'last_seq': 0}
+    app.storage.client['events_state'] = state
+    task = _asyncio.create_task(_stream_loop(queue, app.storage.user, state))
     app.storage.client['events_task'] = task
     app.on_disconnect(lambda: task.cancel())
 

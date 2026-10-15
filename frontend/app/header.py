@@ -1,6 +1,7 @@
 """Application shell: header bar, collapsible sidebar and active-link tracking."""
 
 from contextlib import contextmanager
+import asyncio
 from components.notifications import notify, notify_ongoing
 from components.sidebar_hint import sidebar_hint
 from nicegui import ui, app
@@ -267,6 +268,11 @@ def frame(title: str, version: str, get_logo_func=None):
             if path != _current_path:
                 _current_path = path
                 await _highlight_from_path()
+                # Activity profiling for the Users-tab sparkline: one tiny
+                # POST per navigation, never awaited (fire-and-forget task)
+                # so the highlight never waits on the backend.
+                from services import api_client
+                asyncio.create_task(api_client.track_activity(path))
 
         _current_path = None
         ui.timer(1.0, _watch_path)
