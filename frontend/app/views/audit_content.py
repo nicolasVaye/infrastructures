@@ -266,3 +266,19 @@ def content() -> None:
                 .props('flat no-caps color=negative').classes('button button-ghost')
 
     audit_table()
+
+    # Live updates: logins/logouts/kicks emit 'sessions_changed' — new audit
+    # rows should appear without a manual refresh, like the Users/Sessions
+    # tabs. Same SSE counter pattern; 60s fallback poll as safety net.
+    from views._common import safe_auto_refresh
+
+    seen = {'counter': app.storage.user.get('sessions_refresh_counter', 0)}
+
+    def _on_event() -> None:
+        counter = app.storage.user.get('sessions_refresh_counter', 0)
+        if counter != seen['counter']:
+            seen['counter'] = counter
+            safe_auto_refresh(audit_table.refresh)()
+
+    ui.timer(1.0, _on_event)
+    ui.timer(60.0, safe_auto_refresh(audit_table.refresh))

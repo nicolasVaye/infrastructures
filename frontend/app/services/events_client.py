@@ -27,6 +27,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 
 import httpx
 
@@ -38,9 +39,16 @@ RECONNECT_DELAY = 2.0
 # healthy stream always delivers bytes well within this window. A silently
 # dead connection (proxy hiccup, backend restart, token expiry mid-stream…)
 # then raises ReadTimeout instead of hanging forever — the loop reconnects
-# and the tab keeps receiving live events. This was the root cause of the
-# "sessions only appear after the 60s fallback poll" bug.
+# and the tab keeps receiving live events.
 _STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=45.0, write=10.0, pool=10.0)
+
+# Watchdog: hard upper bound between two chunks. Keepalives arrive every
+# 15s, so a silent gap > WATCHDOG seconds means the pipe is dead even if
+# httpx's own read-timeout never fires (observed in production: the stream
+# delivers the first frame and then nothing, without any exception). The
+# watchdog forces a disconnect → reconnect → Last-Event-ID replay instead
+# of waiting forever on a zombie connection.
+WATCHDOG = 25.0
 
 
 def handle_event(evt: dict) -> None:
@@ -117,6 +125,8 @@ async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
         try:
             token = user_storage.get('access_token')
             if not token:
+                state['connected'] = False
+                state['last_error'] = 'no access token'
                 await asyncio.sleep(RECONNECT_DELAY)
                 continue
             headers = {'Authorization': f'Bearer {token}'}
@@ -128,11 +138,55 @@ async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
                     headers=headers,
                 ) as response:
                     if response.status_code != 200:
+                        # Auth rejection (401) or backend error: report the
+                        # actual status — a loop that fails invisibly looks
+                        # exactly like "SSE does not work".
+                        state['connected'] = False
+                        state['last_error'] = f'HTTP {response.status_code} on /events'
+                        logger.info('Event stream rejected: HTTP %s (retry in %.0fs)',
+                                    response.status_code, RECONNECT_DELAY)
                         await asyncio.sleep(RECONNECT_DELAY)
                         continue
+                    state['connected'] = True
+                    state['last_error'] = None
+                    state['connects'] = state.get('connects', 0) + 1
+                    logger.info('Event stream connected (attempt #%s, last_seq=%s)',
+                                state['connects'], state.get('last_seq', 0))
                     buffer = ''
-                    async for chunk in response.aiter_text():
-                        buffer += chunk
+                    aiter = response.aiter_bytes()
+                    while True:
+                        # Manual anext + wait_for: a guaranteed watchdog on
+                        # top of httpx's read-timeout, which can silently
+                        # never fire on a half-open connection.
+                        try:
+                            chunk = await asyncio.wait_for(
+                                aiter.__anext__(), timeout=WATCHDOG)
+                        except StopAsyncIteration:
+                            # Server closed the stream cleanly: reconnect.
+                            state['connected'] = False
+                            state['last_error'] = 'stream closed by server'
+                            logger.info('Event stream ended by server '
+                                        '(last_seq=%s); reconnecting',
+                                        state.get('last_seq', 0))
+                            break
+                        except asyncio.TimeoutError:
+                            # No bytes within the watchdog window although
+                            # the backend sends a keepalive every 15s: the
+                            # pipe is dead. Drop the connection and replay
+                            # from Last-Event-ID on the next one.
+                            state['connected'] = False
+                            state['last_error'] = (
+                                f'watchdog fired: no data for {WATCHDOG:.0f}s')
+                            logger.info(
+                                'SSE watchdog fired (no chunk in %.0fs, '
+                                'last_seq=%s); reconnecting',
+                                WATCHDOG, state.get('last_seq', 0))
+                            break
+                        state['connected'] = True
+                        # Any chunk (keepalives included) proves the stream
+                        # is alive; the diagnostics panel uses this age.
+                        state['last_chunk_ts'] = time.time()
+                        buffer += chunk.decode('utf-8', errors='replace')
                         while '\n\n' in buffer:
                             frame, buffer = buffer.split('\n\n', 1)
                             for line in frame.splitlines():
@@ -141,6 +195,8 @@ async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
                                         evt = json.loads(line[6:])
                                     except Exception:  # noqa: BLE001
                                         continue
+                                    state['events'] = state.get('events', 0) + 1
+                                    state['last_event_ts'] = time.time()
                                     queue.put_nowait(evt)
                                 elif line.startswith('id: '):
                                     # Track the sequence so the NEXT
@@ -159,7 +215,10 @@ async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — always reconnect
-            logger.debug('Event stream error: %s', exc)
+            state['connected'] = False
+            state['last_error'] = str(exc)
+            logger.info('Event stream error (%s); reconnecting in %.0fs',
+                        exc, RECONNECT_DELAY)
             await asyncio.sleep(RECONNECT_DELAY)
 
 
@@ -181,6 +240,17 @@ def install_event_listener() -> None:
     app.on_disconnect(lambda: task.cancel())
 
     def _drain() -> None:
+        # Mirror the SSE loop's health into the SHARED user storage so the
+        # diagnostics panel (any tab) can show connect state / last event /
+        # last error — the first place to look when live updates seem dead.
+        app.storage.user['sse_status'] = {
+            'connected': bool(state.get('connected')),
+            'last_error': state.get('last_error'),
+            'last_seq': state.get('last_seq', 0),
+            'last_chunk_ts': state.get('last_chunk_ts'),
+            'events': state.get('events', 0),
+            'connects': state.get('connects', 0),
+        }
         while not queue.empty():
             try:
                 evt = queue.get_nowait()

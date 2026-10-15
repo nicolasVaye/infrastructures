@@ -417,12 +417,28 @@ def _users_tab(current_username: str) -> None:
             safe_auto_refresh(user_table.refresh)()
 
     ui.timer(1.0, _on_event)
-    # Short fallback poll: covers the cases SSE cannot signal — a user who
-    # just closes their browser (no logout event is ever emitted; the
-    # session lingers until its TTL) or a stream briefly reconnecting when
-    # the event went out. 15s is cheap (one /sessions GET) and keeps the
-    # online badges honest without waiting for a manual refresh.
-    ui.timer(15.0, safe_auto_refresh(user_table.refresh))
+    # Fallback poll (SSE blind spots: browser closed without logout, stream
+    # briefly reconnecting). Signature-based: fetch the data, rebuild the
+    # table ONLY if something actually changed — an unconditional refresh
+    # every 15s made the whole panel visibly blink although nothing moved.
+    last_sig = {'value': None}
+
+    def _poll_signature() -> None:
+        try:
+            with get_session() as session:
+                online = frozenset(s['username'] for s in session.get('/sessions') or [])
+                activity = {a['username']: a
+                            for a in session.get('/activity/users') or []}
+        except Exception:  # noqa: BLE001 — offline / auth expired: skip
+            return
+        sig = (online,
+               tuple(sorted((name, tuple(a.get('bars') or []), a.get('last15', 0))
+                            for name, a in activity.items())))
+        if sig != last_sig['value']:
+            last_sig['value'] = sig
+            safe_auto_refresh(user_table.refresh)()
+
+    ui.timer(15.0, safe_auto_refresh(_poll_signature))
 
 
 # ================================================================== roles tab

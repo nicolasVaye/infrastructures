@@ -43,6 +43,24 @@ CHANNEL = "infra_events"
 _subscribers: set[asyncio.Queue] = set()
 _listener_task: asyncio.Task | None = None
 
+# Observability counters (surfaced via GET /system/sse-stats): the admin can
+# see whether keepalives/events are actually being produced server-side
+# even when a client claims it receives nothing.
+_keepalives: int = 0
+_fanouts: int = 0
+_client_id: int = 0
+
+
+def stats() -> dict:
+    """Live snapshot of the realtime machinery (admin diagnostics)."""
+    return {
+        "subscribers": len(_subscribers),
+        "seq": _seq,
+        "buffered": len(_ring),
+        "keepalives": _keepalives,
+        "fanouts": _fanouts,
+    }
+
 # -- event log (DB) -----------------------------------------------------------
 
 async def log_event_issue(level: str, source: str, message: str) -> None:
@@ -94,10 +112,14 @@ async def notify_event(session: AsyncSession, event_type: str, **payload) -> Non
 
 def _fanout(raw: str) -> None:
     """Assign a sequence number, buffer the event, push to subscribers."""
-    global _seq
+    global _seq, _fanouts
     _seq += 1
+    _fanouts += 1
     seq = _seq
     _ring.append((seq, raw))
+    if _subscribers:
+        logger.info("SSE event seq=%s fanned out to %s subscriber(s)",
+                    seq, len(_subscribers))
     for q in list(_subscribers):
         try:
             q.put_nowait((seq, raw))
@@ -166,8 +188,13 @@ _RESYNC = json.dumps({"type": "_resync"})
 
 
 async def _event_stream(last_id: int | None) -> AsyncIterator[str]:
+    global _keepalives, _client_id
+    _client_id += 1
+    cid = _client_id
     queue: asyncio.Queue = asyncio.Queue(maxsize=256)
     _subscribers.add(queue)
+    logger.info("SSE subscriber #%s connected (last_event_id=%s, now %s subscriber(s))",
+                cid, last_id, len(_subscribers))
     try:
         # SSE best practices: advertise the reconnect interval, then replay
         # everything the client missed while disconnected (Last-Event-ID).
@@ -195,11 +222,17 @@ async def _event_stream(last_id: int | None) -> AsyncIterator[str]:
                 # detect a dead stream within seconds instead of hanging
                 # on a socket that will never deliver again (silent death
                 # after a proxy hiccup or a backend restart).
+                _keepalives += 1
+                if _keepalives <= 3 or _keepalives % 20 == 0:
+                    logger.info("SSE keepalive #%s sent to %s subscriber(s)",
+                                _keepalives, len(_subscribers))
                 yield ": keepalive\n\n"
                 continue
             yield f"id: {seq}\ndata: {raw}\n\n"
     finally:
         _subscribers.discard(queue)
+        logger.info("SSE subscriber #%s disconnected (%s left)",
+                    cid, len(_subscribers))
 
 
 async def events(user: CurrentUser, request: Request) -> StreamingResponse:

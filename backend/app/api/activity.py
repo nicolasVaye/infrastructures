@@ -83,6 +83,18 @@ async def activity_users(admin: AdminUser, session: DbSession) -> list[dict]:
     return out
 
 
+@router.get("/system/sse-stats")
+async def sse_stats(admin: AdminUser) -> dict:
+    """Live counters of the realtime machinery (backend app.events).
+
+    Lets the admin compare what the SERVER produced (events fanned out,
+    keepalives, subscribers) against what a client RECEIVED — the fastest
+    way to tell whether a dead stream is a backend or a transport issue.
+    """
+    from app import events as _events
+    return _events.stats()
+
+
 @router.get("/system/events-log")
 async def events_log(admin: AdminUser, session: DbSession) -> list[dict]:
     """Last 50 realtime-machinery incidents (SSE drops, LISTEN reconnects)."""
