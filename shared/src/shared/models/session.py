@@ -22,7 +22,10 @@ class SessionOut(BaseModel):
     expires_at: datetime
     auth_provider: str = "local"
     idp_name: str | None = None
-    avatar: str | None = None
+    # Flag only (see UserOut.has_avatar): the image bytes are fetched from
+    # GET /users/{user_id}/avatar when the row actually renders an avatar.
+    has_avatar: bool = False
+    avatar_version: int = 0
     # False when the session is no longer "connected" (no heartbeat within
     # the TTL) but still lingering un-revoked in the DB until the cleanup
     # job sweeps it: the Sessions tab renders those as inactive.

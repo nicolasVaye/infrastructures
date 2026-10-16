@@ -87,34 +87,57 @@ async def set_sidebar_width(request: Request) -> Response:
 
 @app.get('/avatar')
 async def avatar() -> Response:
-    """Serve the connected user's avatar image, straight from the database.
+    """Serve the connected user's avatar image, straight from the backend.
 
     The session cookie (app.storage.user) never carries the avatar itself —
     only a version counter — so the browser always loads it from here. The
     route is protected by the auth middleware like any page; the browser
     sends the session cookie along with the <img> request.
+
+    v2: /auth/me no longer embeds the (potentially huge) base64 avatar —
+    the image now comes from the dedicated GET /users/{id}/avatar route.
     """
-    import base64 as _b64
     from fastapi.responses import Response as _Resp
     from core.database import make_client, sync_tokens_to_storage
 
     client = make_client()
     try:
         me = client.get('/auth/me') or {}
-        data_url = me.get('avatar') or ''
+        if not me.get('has_avatar'):
+            return _Resp(status_code=404)
+        raw = client.get_raw(f"/users/{me['id']}/avatar")
+    except Exception:  # noqa: BLE001 — backend down / auth expired
+        return _Resp(status_code=404)
     finally:
         sync_tokens_to_storage(client)
         client.close()
-    if not data_url.startswith('data:'):
-        return _Resp(status_code=404)
-    try:
-        header, b64 = data_url.split(',', 1)
-        mime = header[5:].split(';')[0] or 'image/png'
-        raw = _b64.b64decode(b64)
-    except Exception:  # noqa: BLE001 — malformed stored avatar
-        return _Resp(status_code=404)
     return _Resp(
-        content=raw, media_type=mime,
+        content=raw.content, media_type=raw.headers.get('content-type') or 'image/png',
+        headers={'Cache-Control': 'private, max-age=86400'},
+    )
+
+
+@app.get('/users/{user_id}/avatar')
+async def user_avatar(user_id: int) -> Response:
+    """Serve ANY user's avatar (admin views: Users and Sessions tables).
+
+    Same pattern as /avatar: the browser <img> carries only the session
+    cookie; this route forwards the viewer's backend token server-side. The
+    backend enforces access (self avatar, or admin for anyone else's).
+    """
+    from fastapi.responses import Response as _Resp
+    from core.database import make_client, sync_tokens_to_storage
+
+    client = make_client()
+    try:
+        raw = client.get_raw(f'/users/{user_id}/avatar')
+    except Exception:  # noqa: BLE001 — backend down / auth expired / 403-404
+        return _Resp(status_code=404)
+    finally:
+        sync_tokens_to_storage(client)
+        client.close()
+    return _Resp(
+        content=raw.content, media_type=raw.headers.get('content-type') or 'image/png',
         headers={'Cache-Control': 'private, max-age=86400'},
     )
 

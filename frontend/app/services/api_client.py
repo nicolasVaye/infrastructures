@@ -76,8 +76,8 @@ async def login(username: str, password: str, *, client_ip: str | None = None,
         'theme': me.get('theme', 'light'),
         'auth_provider': me.get('auth_provider', 'local'),
         'display_name': me.get('display_name'),
-        'has_avatar': bool(me.get('avatar')),
-        'avatar_version': 1,
+        'has_avatar': bool(me.get('has_avatar')),
+        'avatar_version': int(me.get('avatar_version') or 1),
     })
     return me
 

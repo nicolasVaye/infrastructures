@@ -86,7 +86,10 @@ async def login_page(request: Request, redirect_to: str = '/', reason: str = '')
             'authenticated': True,
             'email': user.get('email'),
             'display_name': user.get('display_name'),
-            'avatar': user.get('avatar'),
+            # Flag + version only (never the image bytes in the cookie):
+            # the header renders GET /avatar?v=N from these.
+            'has_avatar': bool(user.get('has_avatar')),
+            'avatar_version': int(user.get('avatar_version') or 0),
             'login_at': now_ts,
             'last_activity': now_ts,
         })

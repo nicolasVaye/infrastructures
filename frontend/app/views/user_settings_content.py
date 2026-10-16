@@ -194,7 +194,7 @@ def content() -> None:
                     # Never store the avatar image in the session cookie:
                     # just the flag + a bumped version, so /avatar URLs (and
                     # the cache) pick up the new image.
-                    app.storage.user['has_avatar'] = bool(updated.get('avatar'))
+                    app.storage.user['has_avatar'] = bool(updated.get('has_avatar'))
                     app.storage.user['avatar_version'] = \
                         app.storage.user.get('avatar_version', 0) + 1
                     _initial['display_name'] = (updated.get('display_name') or '')

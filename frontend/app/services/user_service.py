@@ -69,7 +69,8 @@ def _json_to_user(data: dict) -> User:
         created_at=str(data.get('created_at', '')),
         email=data.get('email'),
         display_name=data.get('display_name'),
-        avatar=data.get('avatar'),
+        has_avatar=bool(data.get('has_avatar')),
+        avatar_version=int(data.get('avatar_version') or 0),
         language=data.get('language', 'en'),
     )
 
@@ -80,8 +81,21 @@ class UserService:
 
     # Queries
     def get_all_users(self) -> list[User]:
-        users = self.session.get('/users')
-        return [_json_to_user(u) for u in users]
+        """Every user, fetched page by page (GET /users?limit=&offset=).
+
+        The endpoint no longer returns the whole table in one unbounded
+        response: at a few hundred users (the project's target), a single
+        fetch is both slow and memory-hungry. Page size 200 keeps each
+        request light while the loop preserves the "everyone" contract.
+        """
+        users: list[User] = []
+        offset = 0
+        while True:
+            page = self.session.get(f'/users?limit=200&offset={offset}') or []
+            users.extend(_json_to_user(u) for u in page)
+            if len(page) < 200:
+                return users
+            offset += 200
 
     def get_user(self, user_id: int) -> User | None:
         try:

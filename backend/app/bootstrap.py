@@ -26,6 +26,31 @@ _SEED_ROLES = [
 ]
 
 
+async def run_migrations(conn) -> None:
+    """Run ``alembic upgrade head`` against the engine's connection.
+
+    Uses Alembic's programmatic API: the migration directory ships with the
+    code (backend/migrations), the baseline revision creates the current
+    schema, and every future schema change is a new revision — reviewable,
+    revertible and applied exactly once per database, unlike the old
+    "ALTER TABLE IF NOT EXISTS" bootstrap. The advisory lock held by the
+    caller serializes concurrent container startups.
+    """
+    from alembic import command
+    from alembic.config import Config
+    from pathlib import Path
+
+    migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
+    cfg = Config()
+    cfg.set_main_option("script_location", str(migrations_dir))
+    cfg.set_main_option(
+        "sqlalchemy.url", get_settings().database_url.replace("+asyncpg", ""))
+    # Reuse the caller's connection so everything runs inside the same
+    # advisory-locked transaction scope as the seeding below.
+    cfg.attributes["connection"] = conn
+    command.upgrade(cfg, "head")
+
+
 # Advisory lock key: serialises schema creation/seeding when several
 # processes (API, worker, scheduler) start at the same time.
 _LOCK_KEY = 918273645
@@ -39,12 +64,13 @@ _WEAK_SECRETS = {
 
 
 def validate_runtime_secrets() -> None:
-    """Refuse to start with a default/weak JWT_SECRET.
+    """Refuse to start with default/weak secrets (fail-fast).
 
-    Called by every process (API, worker, scheduler) via ensure_schema, so a
-    misconfigured deployment fails loudly at boot instead of signing tokens
-    with a secret that ships in the public docker-compose.yaml. Throw-away
-    local environments can opt out with INSECURE_DEV=1.
+    Covers JWT_SECRET and the seed admin password: booting a production
+    deployment with credentials that ship in the public docker-compose.yaml
+    is the single most dangerous misconfiguration, so every process (API,
+    worker, scheduler) checks this via ensure_schema and dies loudly instead.
+    Throw-away local environments can opt out with INSECURE_DEV=1.
     """
     import os
     settings = get_settings()
@@ -56,6 +82,13 @@ def validate_runtime_secrets() -> None:
             "Refusing to start: JWT_SECRET is a known default or too weak "
             f"(< 32 chars, got {len(secret)}). Set a strong JWT_SECRET, or "
             "export INSECURE_DEV=1 only for throw-away local development."
+        )
+    if settings.seed_admin_password.lower() in _WEAK_SECRETS:
+        raise RuntimeError(
+            "Refusing to start: SEED_ADMIN_PASSWORD is a known default "
+            f"({settings.seed_admin_password!r}). Anyone reading the public "
+            "compose file could take over the bootstrap admin. Set a strong "
+            "SEED_ADMIN_PASSWORD, or export INSECURE_DEV=1 for local dev."
         )
 
 
@@ -73,29 +106,26 @@ async def ensure_schema() -> None:
         await conn.execute(
             text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY}
         )
-        await conn.run_sync(Base.metadata.create_all)
-        # Lightweight migrations for columns added after the first release;
-        # create_all only builds missing TABLES, never missing COLUMNS.
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_version"
-            " INTEGER NOT NULL DEFAULT 0"
-        ))
-        await conn.execute(text(
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS theme"
-            " VARCHAR(8) NOT NULL DEFAULT 'light'"
-        ))
-        await conn.execute(text(
-            "ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS session_id"
-            " VARCHAR(36)"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_activity_events_session_id"
-            " ON activity_events (session_id)"
-        ))
-        await conn.execute(text(
-            "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_token_hash"
-            " VARCHAR(64)"
-        ))
+        # Versioned schema: Alembic owns the database shape from now on
+        # (see migrations/). create_all + ad-hoc "ALTER TABLE IF NOT EXISTS"
+        # statements cannot express RENAMES, type changes or data backfills,
+        # which is exactly what a multi-customer production database will
+        # eventually need. If Alembic is unavailable (stripped runtime), we
+        # fall back to create_all for throw-away dev databases.
+        try:
+            await run_migrations(conn)
+        except ImportError:
+            logger.warning("Alembic not installed — falling back to "
+                           "create_all (dev only; production images must "
+                           "ship alembic).")
+            await conn.run_sync(Base.metadata.create_all)
+        # Global SSE event sequence: every backend replica draws the next
+        # event number from the SAME Postgres sequence, so Last-Event-ID
+        # replay keeps a coherent order across a scaled-out backend fleet.
+        if not settings.database_url.startswith("sqlite"):
+            await conn.execute(text(
+                "CREATE SEQUENCE IF NOT EXISTS infra_event_seq START 1"
+            ))
 
     async with get_session_factory()() as session:
         await session.execute(

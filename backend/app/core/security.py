@@ -159,8 +159,30 @@ async def get_session_id(
 SessionId = Annotated[str, Depends(get_session_id)]
 
 
+def _is_trusted_proxy(host: str | None) -> bool:
+    """True when the peer IP belongs to a configured trusted proxy range.
+
+    X-Forwarded-For is CLIENT-CONTROLLED: an untrusted caller can spoof the
+    header and rotate fake IPs to defeat the login rate limiter (which keys
+    on this value). The header is therefore only honoured when the TCP peer
+    itself comes from a trusted network (the frontend container / reverse
+    proxy), and the actual peer IP is used otherwise.
+    """
+    if not host:
+        return False
+    import ipaddress
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(addr in ipaddress.ip_network(cidr)
+               for cidr in get_settings().trusted_proxies)
+
+
 def client_ip(request) -> str:
+    host = request.client.host if request.client else None
     forwarded = request.headers.get("X-Forwarded-For", "")
-    return forwarded.split(',')[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
-    )
+    if forwarded and _is_trusted_proxy(host):
+        # Left-most entry = the original client as added by OUR proxy chain.
+        return forwarded.split(',')[0].strip()
+    return host or "unknown"

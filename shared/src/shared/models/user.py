@@ -31,7 +31,12 @@ class UserOut(BaseModel):
     must_change_password: bool
     email: str | None = None
     display_name: str | None = None
-    avatar: str | None = None
+    # The avatar image itself is NEVER serialized here: a base64 data URL can
+    # weigh megabytes and used to ride in EVERY /users, /auth/me and /sessions
+    # response. Consumers fetch it on demand from GET /users/{id}/avatar and
+    # use avatar_version for cache busting.
+    has_avatar: bool = False
+    avatar_version: int = 0
     language: str = "en"
     theme: str = "light"
     created_at: datetime

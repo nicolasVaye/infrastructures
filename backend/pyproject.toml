@@ -16,6 +16,8 @@ dependencies = [
     "httpx>=0.27",
     "apscheduler>=3.10",
     "croniter>=2.0",
+    # Versioned schema migrations (see migrations/ + app.bootstrap).
+    "alembic>=1.13",
     # Rasterizes the admin-uploaded logo into a multi-resolution .ico favicon.
     "Pillow>=10.0",
 ]

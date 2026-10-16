@@ -79,7 +79,8 @@ def _users_tab(current_username: str) -> None:
                     'must_change_password': u.must_change_password,
                     'auth_provider': u.auth_provider,
                     'idp_name': u.idp_name,
-                    'avatar': u.avatar,
+                    'has_avatar': u.has_avatar,
+                    'avatar_version': u.avatar_version,
                 }
                 for u in UserService(session).get_all_users()
             ]
@@ -116,8 +117,8 @@ def _users_tab(current_username: str) -> None:
     # -- per-cell signatures: a cell re-renders only when ITS data moved ----
     def _sig_user(uid: int) -> tuple:
         d = state['data'][uid]
-        return (d['username'], d['avatar'], d['must_change_password'],
-                d['auth_provider'])
+        return (d['username'], d.get('has_avatar'), d.get('avatar_version'),
+                d['must_change_password'], d['auth_provider'])
 
     def _sig_role(uid: int) -> tuple:
         return (state['data'][uid]['role'],)
@@ -149,9 +150,10 @@ def _users_tab(current_username: str) -> None:
     def _render_user_cell(uid: int) -> None:
         u = state['data'][uid]
         with ui.row().classes('flex-1 items-center gap-3 min-w-0'):
-            if u.get('avatar'):
-                # Profile photo (data URL) — round, like the header.
-                ui.image(u['avatar']).style(
+            if u.get('has_avatar'):
+                # Profile photo, loaded on demand from the dedicated avatar
+                # route (versioned URL = browser cache busts on change).
+                ui.image(f"/users/{u['id']}/avatar?v={u.get('avatar_version', 0)}").style(
                     'width: 32px; height: 32px; border-radius: 50%; '
                     'object-fit: cover; flex-shrink: 0;'
                 )

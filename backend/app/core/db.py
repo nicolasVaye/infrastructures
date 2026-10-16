@@ -133,8 +133,12 @@ class SessionRecord(Base):
         return self.user.idp_ref.name if self.user.idp_ref else None
 
     @property
-    def avatar(self) -> str | None:
-        return self.user.avatar
+    def has_avatar(self) -> bool:
+        return bool(self.user.avatar)
+
+    @property
+    def avatar_version(self) -> int:
+        return self.user.avatar_version or 0
 
 
 class AuditLogRecord(Base):

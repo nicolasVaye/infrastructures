@@ -94,8 +94,13 @@ def log_event_issue_bg(level: str, source: str, message: str) -> None:
 # Sequence numbers + ring buffer: best practice for at-least-once SSE.
 # Every event gets a monotonic ``seq``; the last 200 stay buffered so a
 # client that reconnects (read timeout, backend restart, proxy hiccup…)
-# replays everything it missed instead of silently losing events. Per
-# process sequence — with a single backend replica this is the global order.
+# replays everything it missed instead of silently losing events.
+# GLOBAL sequence: on Postgres the number is drawn from the shared
+# ``infra_event_seq`` sequence INSIDE the emitting transaction and embedded
+# in the notification, so every replica of a scaled-out backend assigns the
+# same coherent order — a per-process counter made Last-Event-ID replay
+# incoherent as soon as backend > 1 replica. ``_seq`` only remains as the
+# fallback for the SQLite dev path (single process).
 _seq: int = 0
 _ring: deque[tuple[int, str]] = deque(maxlen=200)
 _REPLAY_WINDOW = _ring.maxlen
@@ -103,19 +108,32 @@ _REPLAY_WINDOW = _ring.maxlen
 
 async def notify_event(session: AsyncSession, event_type: str, **payload) -> None:
     """Emit a change event; delivered when the surrounding tx commits."""
-    data = json.dumps({"type": event_type, **payload})
     if get_settings().database_url.startswith("sqlite"):
-        _fanout(data)
+        _fanout(json.dumps({"type": event_type, **payload}))
         return
+    # Draw the GLOBAL sequence number in the same transaction: committed
+    # events get contiguous ids across all replicas; rolled-back ones leave
+    # a hole, which clients self-heal via the _resync mechanism.
+    seq = (await session.execute(
+        text("SELECT nextval('infra_event_seq')"))).scalar_one()
+    data = json.dumps({"type": event_type, "_seq": seq, **payload})
     await session.execute(text(f"SELECT pg_notify({CHANNEL!r}, :p)"), {"p": data})
 
 
-def _fanout(raw: str) -> None:
+def _fanout(raw: str, *, seq: int | None = None) -> None:
     """Assign a sequence number, buffer the event, push to subscribers."""
     global _seq, _fanouts
-    _seq += 1
+    if seq is None:
+        # Notification without an embedded global seq (emitted by a replica
+        # running an older build): fall back to the local counter.
+        try:
+            seq = int(json.loads(raw).get("_seq") or 0)
+        except Exception:  # noqa: BLE001 — malformed payload: local fallback
+            seq = 0
+        if seq <= 0:
+            _seq += 1
+            seq = _seq
     _fanouts += 1
-    seq = _seq
     _ring.append((seq, raw))
     if _subscribers:
         logger.info("SSE event seq=%s fanned out to %s subscriber(s)",

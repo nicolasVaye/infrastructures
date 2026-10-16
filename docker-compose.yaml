@@ -12,8 +12,11 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
+      # Dev default below; production MUST override via .env (the backend
+      # fail-fasts on default JWT/admin secrets, the DB password is your
+      # first line of defence for the data itself).
       POSTGRES_USER: infra
-      POSTGRES_PASSWORD: infra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infra}
       POSTGRES_DB: infrastructures
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -29,8 +32,14 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment: &backend_env
-      DATABASE_URL: postgresql+asyncpg://infra:infra@postgres:5432/infrastructures
+      DATABASE_URL: postgresql+asyncpg://infra:${POSTGRES_PASSWORD:-infra}@postgres:5432/infrastructures
+      # PRODUCTION: set a strong JWT_SECRET (>= 32 chars) in .env — the
+      # backend REFUSES to boot with the default value unless INSECURE_DEV=1.
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # PRODUCTION: change the seed admin password — the backend refuses the
+      # default 'admin' unless INSECURE_DEV=1 (it must still be changed at
+      # first login, but the shipped value must not be the live one).
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin}
       CORS_ORIGINS: '["http://localhost:8080"]'
       # Public URL of the frontend as seen from the browser; the OIDC
       # redirect_uri is {base}/auth/oidc/callback
@@ -45,6 +54,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      # Readiness = HTTP + actual database round-trip (see GET /health):
+      # a starting container must not receive traffic before the schema is
+      # migrated and Postgres answers.
+      test: ["CMD-SHELL",
+             "python -c \"import urllib.request as u; u.urlopen('http://localhost:8000/health', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   worker:
@@ -93,6 +112,13 @@ services:
       - "8080:8080"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD-SHELL",
+             "python -c \"import urllib.request as u; u.urlopen('http://localhost:8080/health', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
     # Note: NiceGUI holds a WebSocket per browser session — put a sticky-session
     # load balancer in front if you scale this service beyond one replica.

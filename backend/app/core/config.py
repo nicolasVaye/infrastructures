@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     seed_admin_username: str = "admin"
     seed_admin_password: str = "admin"
 
+    # Reverse proxies allowed to set a trustworthy X-Forwarded-For (CIDRs).
+    # Requests from outside these ranges are keyed by their TCP peer IP for
+    # rate limiting — a spoofed XFF then cannot rotate the limiter's key.
+    # Default trusts the private docker/overlay networks only.
+    trusted_proxies: list[str] = [
+        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
+    ]
+
     # OIDC / external identity providers
     # Public base URL of the frontend as seen from the user's browser; the
     # OIDC redirect_uri is built from it: {base}/auth/oidc/callback

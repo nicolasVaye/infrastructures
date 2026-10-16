@@ -57,6 +57,27 @@ class SyncClient:
     def get(self, path: str, **kwargs):
         return self.request("GET", path, **kwargs)
 
+    def get_raw(self, path: str, **kwargs) -> httpx.Response:
+        """GET returning the raw response (binary payloads: avatars, logos).
+
+        Same auth/refresh handling as :meth:`request`, but the body is NOT
+        JSON-decoded — image bytes must survive intact.
+        """
+        headers = kwargs.pop("headers", {})
+        if self._access_token:
+            headers["Authorization"] = f"Bearer {self._access_token}"
+        response = self._http.request("GET", path, headers=headers, **kwargs)
+        if response.status_code == 401 and self._refresh_token and self._refresh():
+            headers["Authorization"] = f"Bearer {self._access_token}"
+            response = self._http.request("GET", path, headers=headers, **kwargs)
+        if response.status_code >= 400:
+            try:
+                detail = response.json().get("detail", response.text)
+            except Exception:
+                detail = response.text
+            raise ApiError(response.status_code, detail)
+        return response
+
     def post(self, path: str, **kwargs):
         return self.request("POST", path, **kwargs)
 

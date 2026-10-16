@@ -87,8 +87,8 @@ async def oidc_callback(request: Request, code: str = '', state: str = '',
             # flag + version counter (same contract as the local login), so
             # the header renders GET /avatar?v=N instead of a generic
             # account icon until the first heartbeat digest lands.
-            'has_avatar': bool(user.get('avatar')),
-            'avatar_version': 1,
+            'has_avatar': bool(user.get('has_avatar')),
+            'avatar_version': int(user.get('avatar_version') or 1),
             'login_at': now_ts,
             'last_activity': now_ts,
         })

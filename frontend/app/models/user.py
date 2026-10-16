@@ -24,7 +24,9 @@ class User:
     idp_name: str | None = None
     email: str | None = None
     display_name: str | None = None
-    avatar: str | None = None
+    # Flag + version only: the image bytes load from /users/{id}/avatar.
+    has_avatar: bool = False
+    avatar_version: int = 0
     language: str = 'en'
 
     @property

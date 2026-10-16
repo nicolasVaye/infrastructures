@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import re
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import delete, func, select
 
 from app.core.db import RoleRecord, SessionRecord, UserRecord, utcnow
@@ -48,7 +49,8 @@ def _out(user: UserRecord) -> UserOut:
         auth_provider=user.auth_provider,
         idp_name=user.idp_ref.name if user.idp_ref else None,
         is_active=user.is_active, must_change_password=user.must_change_password,
-        email=user.email, display_name=user.display_name, avatar=user.avatar,
+        email=user.email, display_name=user.display_name,
+        has_avatar=bool(user.avatar), avatar_version=user.avatar_version or 0,
         language=user.language,
         theme=user.theme or "light", created_at=user.created_at,
     )
@@ -84,11 +86,51 @@ async def list_roles(user: CurrentUser, session: DbSession) -> list[RoleOut]:
 
 
 @router.get("/users", response_model=list[UserOut])
-async def list_users(admin: AdminUser, session: DbSession) -> list[UserOut]:
+async def list_users(
+    admin: AdminUser, session: DbSession,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[UserOut]:
+    """Paginated user list (avatar bytes are NOT included — see UserOut).
+
+    Callers that still need "everyone" loop over pages (limit ≤ 500) instead
+    of the old unbounded full-table fetch, whose response size grew with
+    every avatar until the Users page moved megabytes per load.
+    """
     users = (await session.scalars(
         select(UserRecord).order_by(func.lower(UserRecord.username))
+        .limit(limit).offset(offset)
     )).all()
     return [_out(u) for u in users]
+
+
+@router.get("/users/{user_id}/avatar")
+async def get_user_avatar(
+    user_id: int, user: CurrentUser, session: DbSession,
+) -> Response:
+    """Serve one user's avatar image (raw bytes, not a data URL in JSON).
+
+    Access: an admin may read anyone's avatar (Users/Sessions tabs); a
+    regular user only their own. This is what finally keeps multi-megabyte
+    base64 avatars out of every list response.
+    """
+    from fastapi.responses import Response as _Response
+    target = await session.get(UserRecord, user_id)
+    if target is None or not target.avatar:
+        raise HTTPException(404, "No avatar for this user.")
+    if user.id != user_id and user.role != "admin":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
+    header, _, b64 = target.avatar.partition(",")
+    try:
+        mime = header[5:].split(";")[0] or "image/png"
+        raw = base64.b64decode(b64)
+    except Exception as exc:  # noqa: BLE001 — malformed stored avatar
+        raise HTTPException(500, "Stored avatar is corrupt.") from exc
+    return _Response(
+        content=raw, media_type=mime,
+        headers={"Cache-Control": f"private, max-age=86400, "
+                                 f"immutable-id={target.avatar_version or 0}"},
+    )
 
 
 @router.get("/users/{user_id}", response_model=UserOut)

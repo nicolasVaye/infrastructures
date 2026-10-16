@@ -122,7 +122,8 @@ def content() -> None:
     # -- per-cell signatures ---------------------------------------------------
     def _sig_user(sid: str) -> tuple:
         d = state['data'][sid]
-        return (d.get('username'), d.get('avatar'), d.get('auth_provider'),
+        return (d.get('username'), d.get('has_avatar'), d.get('avatar_version'),
+                d.get('auth_provider'),
                 d.get('idp_name'), state['counts'].get(d.get('username'), 0),
                 bool(d.get('active', True)))
 
@@ -145,11 +146,14 @@ def content() -> None:
     def _render_user_cell(sid: str) -> None:
         s = state['data'][sid]
         inactive = not bool(s.get('active', True))
-        if s.get('avatar'):
-            # Profile photo (data URL) of the session's user. Zombie
-            # sessions (no heartbeat, awaiting cleanup) render dimmed so
-            # "connected" and "leftover" never look the same.
-            img = ui.image(s['avatar']).style(
+        if s.get('has_avatar'):
+            # Profile photo of the session's user, loaded on demand from the
+            # dedicated avatar route. Zombie sessions (no heartbeat, awaiting
+            # cleanup) render dimmed so "connected" and "leftover" never
+            # look the same.
+            img = ui.image(
+                f"/users/{s.get('user_id')}/avatar?v={s.get('avatar_version', 0)}"
+            ).style(
                 'width: 28px; height: 28px; border-radius: 50%; '
                 'object-fit: cover; flex-shrink: 0;'
             )

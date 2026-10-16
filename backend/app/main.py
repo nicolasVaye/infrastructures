@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.bootstrap import ensure_schema
 from app.core.config import get_settings
-from app.core.db import get_engine
+from app.core.db import get_engine, get_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,21 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:
-        return {"status": "ok"}
+        """Liveness + database readiness probe.
+
+        A static 200 here used to report a healthy process while every query
+        failed (Postgres restarting, network partition) — orchestrators
+        (compose healthcheck, Swarm, k8s) must be able to see the difference.
+        """
+        from fastapi.responses import JSONResponse
+        from sqlalchemy import text
+        try:
+            async with get_session_factory()() as session:
+                await session.execute(text("SELECT 1"))
+        except Exception:  # noqa: BLE001 — any DB failure = unhealthy
+            return JSONResponse({"status": "degraded", "database": "unreachable"},
+                                status_code=503)
+        return {"status": "ok", "database": "ok"}
 
     return app
 
