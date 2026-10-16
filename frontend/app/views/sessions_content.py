@@ -18,10 +18,15 @@ from nicegui import app, ui
 
 from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
+from components.pager import pager
 from core.database import get_session
 from services.i18n import bind_format, t
 from services.tz import format_local, get_app_timezone
 from views._common import activity_sparkline, safe_auto_refresh
+
+# Rows rendered per page: all sessions stay fetched client-side (online
+# badges, sparklines); only the RENDERED slice is paginated.
+_PAGE_SIZE = 50
 
 _client_icons = {
     'web': 'web',
@@ -80,7 +85,7 @@ def content() -> None:
     # closed without logout, waiting for the nightly cleanup job.
     state: dict = {'data': {}, 'counts': Counter(), 'order': [],
                    'rows': {}, 'chips_sig': None,
-                   'search': '', 'show_inactive': False}
+                   'search': '', 'show_inactive': False, 'page': 1}
 
     def _fetch() -> bool:
         """Refresh state['data'] / state['counts'] from the backend.
@@ -96,7 +101,12 @@ def content() -> None:
                 activity = {a['session_id']: a
                             for a in api.get('/activity/sessions') or []}
         except ApiError as exc:
-            if getattr(exc, 'status_code', None) == 401:
+            # 401: session revoked — the heartbeat redirects; previously
+            # rendered rows simply stay in place. 403: the browser's
+            # identity changed mid-session (same-browser login as a lesser
+            # user — see the /settings role watcher): stop silently too,
+            # the page is about to be closed.
+            if getattr(exc, 'status_code', None) in (401, 403):
                 return False
             raise
         state['counts'] = Counter(s['username'] for s in all_sessions)
@@ -316,6 +326,7 @@ def content() -> None:
             selected_user['username'] = None
         else:
             selected_user['username'] = username
+        state['page'] = 1
         _apply()
 
     def _apply() -> None:
@@ -332,10 +343,17 @@ def content() -> None:
 
         sel = selected_user['username']
         search = state['search']
-        order = [sid for sid in _stable_ids()
-                 if (sel is None or state['data'][sid].get('username') == sel)
-                 and (not search
-                      or search in (state['data'][sid].get('username') or '').lower())]
+        filtered = [sid for sid in _stable_ids()
+                    if (sel is None or state['data'][sid].get('username') == sel)
+                    and (not search
+                         or search in (state['data'][sid].get('username') or '').lower())]
+        # Client-side pagination of the filtered list (clamped when the
+        # filters or the live poll shrink the result set).
+        total = len(filtered)
+        pages = max(1, -(-total // _PAGE_SIZE))
+        state['page'] = min(state['page'], pages)
+        start = (state['page'] - 1) * _PAGE_SIZE
+        order = filtered[start:start + _PAGE_SIZE]
         if order != list(state['rows'].keys()):
             # A session appeared/disappeared or the filter changed: rebuild
             # the rows container (rare — logins/logouts/kicks only).
@@ -348,6 +366,7 @@ def content() -> None:
                         ui.label(t('sessions.empty')).classes('text-muted')
                 for sid in order:
                     state['rows'][sid] = _make_row(sid)
+            pager_view.refresh()
             return
         for sid in order:
             row = state['rows'][sid]
@@ -362,6 +381,11 @@ def content() -> None:
                 if sig != row['sigs'].get(name):
                     row['sigs'][name] = sig
                     row['cells'][name].refresh()
+        pager_view.refresh()
+
+    def _goto_page(p: int) -> None:
+        state['page'] = p
+        _apply()
 
     def _reload() -> None:
         if _fetch():
@@ -376,12 +400,12 @@ def content() -> None:
             .props('outlined dense clearable') \
             .style('max-width: 280px;')
         search_input.on_value_change(lambda e: (
-            state.update(search=(e.value or '').strip().lower()),
+            state.update(search=(e.value or '').strip().lower(), page=1),
             safe_auto_refresh(_apply)(),
         ))
         inactive_switch = ui.switch(t('sessions.filter.inactive')).props('dense')
         inactive_switch.on_value_change(lambda e: (
-            state.update(show_inactive=bool(e.value)),
+            state.update(show_inactive=bool(e.value), page=1),
             safe_auto_refresh(_reload)(),
         ))
 
@@ -398,6 +422,20 @@ def content() -> None:
             ui.label(t('users.col.actions')).style('width: 90px;')
         rows = ui.column().classes('w-full gap-0')
 
+    @ui.refreshable
+    def pager_view() -> None:
+        total = len(state['data'])
+        if state['search'] or selected_user['username']:
+            # The pager reports the FILTERED count, matching what is listed.
+            sel = selected_user['username']
+            search = state['search']
+            total = sum(1 for sid in state['data']
+                        if (sel is None or state['data'][sid].get('username') == sel)
+                        and (not search or search in (
+                            state['data'][sid].get('username') or '').lower()))
+        pager(total, state['page'], _PAGE_SIZE, _goto_page)
+
+    pager_view()
     _reload()
 
     # Live updates: logins/logouts/kicks push 'sessions_refresh_counter'

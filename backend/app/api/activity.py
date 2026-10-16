@@ -19,7 +19,7 @@ from sqlalchemy import delete, select
 
 from app.core.config import get_settings
 from app.core.db import (ActivityRecord, EventLogRecord, SessionRecord,
-                         UserRecord, utcnow)
+                         UserRecord, as_utc, utcnow)
 from app.core.security import (AdminUser, CurrentUser, DbSession,
                                SessionId)
 
@@ -53,13 +53,14 @@ def _aggregate(rows: list[ActivityRecord], now) -> dict:
     cutoff15 = now - timedelta(minutes=15)
     entry = {'bars': [0] * 24, 'last15': 0, 'last': None}
     for r in rows:
-        idx = 23 - int((now - r.created_at).total_seconds() // 600)
+        created = as_utc(r.created_at)
+        idx = 23 - int((now - created).total_seconds() // 600)
         if 0 <= idx < 24:
             entry['bars'][idx] += 1
-        if r.created_at >= cutoff15:
+        if created >= cutoff15:
             entry['last15'] += 1
-        if entry['last'] is None or r.created_at > entry['last']:
-            entry['last'] = r.created_at
+        if entry['last'] is None or created > entry['last']:
+            entry['last'] = created
     return entry
 
 
@@ -84,12 +85,15 @@ async def activity_users(admin: AdminUser, session: DbSession) -> list[dict]:
     for r in rows:
         per_user.setdefault(r.user_id, []).append(r)
 
+    # One query for ALL touched users (N+1 here meant one SELECT per user:
+    # fine with a handful of accounts, a real cost with hundreds).
+    users = (await session.scalars(
+        select(UserRecord).where(UserRecord.id.in_(per_user.keys()))
+    )).all()
+
     out: list[dict] = []
-    for uid, user_rows in per_user.items():
-        user = await session.get(UserRecord, uid)
-        if user is None:
-            continue
-        e = _aggregate(user_rows, now)
+    for user in users:
+        e = _aggregate(per_user[user.id], now)
         out.append({
             'username': user.username,
             'bars': e['bars'],
@@ -121,18 +125,24 @@ async def activity_sessions(admin: AdminUser, session: DbSession) -> list[dict]:
     for r in rows:
         per_sid.setdefault(r.session_id, []).append(r)
 
+    # One query for ALL touched sessions (same N+1 fix as /activity/users).
+    records = (await session.scalars(
+        select(SessionRecord).where(SessionRecord.id.in_(per_sid.keys()))
+    )).all()
+    by_sid = {r.id: r for r in records}
+
     out: list[dict] = []
     for sid, sid_rows in per_sid.items():
-        record = await session.get(SessionRecord, sid)
+        record = by_sid.get(sid)
         if record is None or record.revoked_at is not None:
             continue
         # Same freshness rules as the Sessions tab itself (connected_sessions):
         # a browser closed without logout leaves the record un-revoked until
         # TTL expiry — those zombie sessions must not feed sparklines.
-        if record.expires_at <= now:
+        if as_utc(record.expires_at) <= now:
             continue
         threshold = now - timedelta(seconds=get_settings().heartbeat_ttl_seconds)
-        if record.last_activity < threshold:
+        if as_utc(record.last_activity) < threshold:
             continue
         e = _aggregate(sid_rows, now)
         out.append({

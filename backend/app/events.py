@@ -133,6 +133,11 @@ def _fanout(raw: str, *, seq: int | None = None) -> None:
         if seq <= 0:
             _seq += 1
             seq = _seq
+    # Track the HIGHEST seq seen (global Postgres sequence or local
+    # fallback): stats() must report the real latest event number, not the
+    # local counter frozen at 0 on the Postgres path — the Realtime
+    # Diagnostics panel compares this value against the client's last_seq.
+    _seq = max(_seq, seq)
     _fanouts += 1
     _ring.append((seq, raw))
     if _subscribers:

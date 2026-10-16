@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.db import SessionRecord, UserRecord, get_session, utcnow
+from app.core.db import SessionRecord, UserRecord, as_utc, get_session, utcnow
 
 # -- password hashing (pbkdf2_sha256$iterations$salt$hash) ------------------
 
@@ -126,7 +126,8 @@ async def get_current_user(
     # to is still valid. Without this, a revoked session (logout or admin
     # kick from another tab) would keep working until the token expires.
     record = await session.get(SessionRecord, payload["sid"])
-    if record is None or record.revoked_at is not None or record.expires_at <= utcnow():
+    if (record is None or record.revoked_at is not None
+            or as_utc(record.expires_at) <= utcnow()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session revoked or expired")
     user = await session.get(UserRecord, int(payload["sub"]))
     if user is None or not user.is_active:

@@ -70,12 +70,17 @@ async def test_stream_replays_missed_events_then_keeps_live():
 
 
 async def test_stream_resyncs_when_replay_window_exceeded():
-    # Client at seq 0 but the ring starts at 11: everything ≤ 10 is
-    # unrecoverable → the first data frame MUST be a _resync marker.
-    for n in range(1, 12):
+    # Client at seq 0 but the ring only starts at (_REPLAY_WINDOW + 11):
+    # everything before that is unrecoverable → the first data frame MUST
+    # be a _resync marker.
+    for n in range(1, events._REPLAY_WINDOW + 11):
         events._fanout(json.dumps({"type": "ping", "n": n}))
+    assert events._ring[0][0] == 11  # window evicted events 1..10
     stream = events._event_stream(last_id=0)
     first = await stream.__anext__()   # retry/connected frame
     second = await stream.__anext__()  # first data frame
     assert second.startswith("id: 0\n")
     assert json.loads(second.split("data: ")[1].split("\n")[0])["type"] == "_resync"
+    # The replayable tail is still delivered after the marker.
+    third = await stream.__anext__()
+    assert third.startswith(f"id: 11\n")

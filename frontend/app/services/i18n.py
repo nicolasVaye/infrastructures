@@ -32,7 +32,30 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'nav.print_demo':     {'en': 'Print Demo', 'de': 'Druckdemo', 'fr': "Démo d’impression"},
     'nav.icons':          {'en': 'Icons', 'de': 'Symbole', 'fr': "Icônes"},
     'nav.design_system':  {'en': 'Design System', 'de': 'Designsystem', 'fr': "Design System"},
+    'nav.examples':       {'en': 'Examples', 'de': 'Beispiele', 'fr': "Exemples"},
     'nav.users':          {'en': 'Users', 'de': 'Benutzer', 'fr': "Utilisateurs"},
+
+    # Examples hub page (one tab per demo section)
+    'examples.title':     {'en': 'Examples', 'de': 'Beispiele', 'fr': "Exemples"},
+    'examples.subtitle':  {'en': 'All demo sections in one place, one tab each.',
+                           'de': 'Alle Beispiel-Bereiche an einem Ort, je ein Tab.',
+                           'fr': "Toutes les sections de démonstration au même endroit, un onglet chacune."},
+
+    # TEMPORARY dummy nav links (sidebar overflow stress-test, see views/demo_content.py)
+    'nav.demo_1':         {'en': 'Demo 1', 'de': 'Demo 1', 'fr': "Démo 1"},
+    'nav.demo_2':         {'en': 'Demo 2', 'de': 'Demo 2', 'fr': "Démo 2"},
+    'nav.demo_3':         {'en': 'Demo 3', 'de': 'Demo 3', 'fr': "Démo 3"},
+    'nav.demo_4':         {'en': 'Demo 4', 'de': 'Demo 4', 'fr': "Démo 4"},
+    'nav.demo_5':         {'en': 'Demo 5', 'de': 'Demo 5', 'fr': "Démo 5"},
+    'nav.demo_6':         {'en': 'Demo 6', 'de': 'Demo 6', 'fr': "Démo 6"},
+    'nav.demo_7':         {'en': 'Demo 7', 'de': 'Demo 7', 'fr': "Démo 7"},
+    'nav.demo_8':         {'en': 'Demo 8', 'de': 'Demo 8', 'fr': "Démo 8"},
+    'nav.demo_3_1':       {'en': 'Branch 1', 'de': 'Zweig 1', 'fr': "Branche 1"},
+    'nav.demo_3_2':       {'en': 'Branch 2', 'de': 'Zweig 2', 'fr': "Branche 2"},
+    'nav.demo_3_3':       {'en': 'Branch 3', 'de': 'Zweig 3', 'fr': "Branche 3"},
+    'demo.subtitle':      {'en': 'Temporary blank page used to test the sidebar scrolling.',
+                           'de': 'Temporäre Leerseite zum Testen des Sidebar-Scrollens.',
+                           'fr': "Page blanche temporaire pour tester le défilement de la barre de navigation."},
     'action.collapse':    {'en': 'Collapse', 'de': 'Einklappen', 'fr': "Réduire"},
 
     # Mobile burger sheet & About dialog
@@ -220,6 +243,9 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
     'audit.admin_only':   {'en': 'The audit log is available to administrators only.', 'de': 'Das Audit-Protokoll ist nur für Administratoren verfügbar.', 'fr': "Le journal d’audit est réservé aux administrateurs."},
     'audit.empty':        {'en': 'No activity recorded yet.', 'de': 'Noch keine Aktivität aufgezeichnet.', 'fr': "Aucune activité enregistrée pour l’instant."},
     'audit.showing':      {'en': 'Showing {shown} of {total} entries', 'de': 'Zeige {shown} von {total} Einträgen', 'fr': "{shown} entrées affichées sur {total}"},
+    'common.pager.showing': {'en': 'Showing {frm}–{to} of {total}', 'de': 'Zeige {frm}–{to} von {total}', 'fr': 'Affichage de {frm} à {to} sur {total}'},
+    'common.pager.prev':  {'en': 'Previous page', 'de': 'Vorherige Seite', 'fr': 'Page précédente'},
+    'common.pager.next':  {'en': 'Next page', 'de': 'Nächste Seite', 'fr': 'Page suivante'},
     'audit.col.time':     {'en': 'Time', 'de': 'Zeit', 'fr': "Heure"},
     'audit.col.user':     {'en': 'User', 'de': 'Benutzer', 'fr': "Utilisateur"},
     'audit.col.action':   {'en': 'Action', 'de': 'Aktion', 'fr': "Action"},

@@ -35,31 +35,68 @@ def content() -> None:
         return
 
     # -- Admin hub tabs ---------------------------------------------------
-    # Lazy imports keep the module import graph flat; each tab body is the
-    # existing view, rendered inside its panel (only the active one builds).
+    # Lazy imports keep the module import graph flat. The tab BODIES are
+    # built lazily too: NiceGUI executes every ui.tab_panel block when the
+    # page renders, and building all six at once costs ~10 blocking REST
+    # calls + one sparkline per session row pushed over the websocket
+    # BEFORE the first paint (the page felt slow with just a few hundred
+    # sessions). Each body is built once, on first activation of its tab;
+    # the default tab (general) is built right away.
     from views import audit_content, idps_content, sessions_content, users_content
 
-    with ui.tabs().classes('tabs-bar') as tabs:
-        tab_general  = ui.tab(name='general',  label=t('appsettings.tab.general'),  icon='tune')
-        tab_users    = ui.tab(name='users',    label=t('appsettings.tab.users'),    icon='group')
-        tab_roles    = ui.tab(name='roles',    label=t('appsettings.tab.roles'),    icon='admin_panel_settings')
-        tab_sessions = ui.tab(name='sessions', label=t('appsettings.tab.sessions'), icon='devices')
-        tab_audit    = ui.tab(name='audit',    label=t('appsettings.tab.audit'),    icon='history')
-        tab_idps     = ui.tab(name='idps',     label=t('appsettings.tab.idps'),     icon='vpn_key')
+    with ui.tabs().classes('tabs-bar').on_value_change(
+            lambda e: _activate(e.value)) as tabs:
+        for _name, _key, _icon in [
+            ('general',  'appsettings.tab.general',  'tune'),
+            ('users',    'appsettings.tab.users',    'group'),
+            ('roles',    'appsettings.tab.roles',    'admin_panel_settings'),
+            ('sessions', 'appsettings.tab.sessions', 'devices'),
+            ('audit',    'appsettings.tab.audit',   'history'),
+            ('idps',     'appsettings.tab.idps',    'vpn_key'),
+        ]:
+            ui.tab(name=_name, label=t(_key), icon=_icon)
 
-    with ui.tab_panels(tabs, value=tab_general).classes('w-full'):
-        with ui.tab_panel(tab_general):
-            _general_panel()
-        with ui.tab_panel(tab_users):
-            users_content.users_tab()
-        with ui.tab_panel(tab_roles):
-            users_content.roles_tab()
-        with ui.tab_panel(tab_sessions):
-            sessions_content.content()
-        with ui.tab_panel(tab_audit):
-            audit_content.content()
-        with ui.tab_panel(tab_idps):
-            idps_content.content()
+    # First paint only builds the active tab; the other bodies wait for
+    # their first activation (built once, then left in the DOM).
+    _builders = {
+        'general': _general_panel,
+        'users': users_content.users_tab,
+        'roles': users_content.roles_tab,
+        'sessions': sessions_content.content,
+        'audit': audit_content.content,
+        'idps': idps_content.content,
+    }
+    _slots: dict = {}
+    _built: set[str] = set()
+
+    def _activate(name: str) -> None:
+        # The tabs element emits its initial value change BEFORE the panels
+        # exist: ignore events for slots that are not created yet (the
+        # default tab is built explicitly once the slots exist).
+        slot = _slots.get(name)
+        if slot is None or name in _built:
+            return
+        _built.add(name)
+        with slot:
+            _builders[name]()
+
+    with ui.tab_panels(tabs, value='general').classes('w-full'):
+        for _name in _builders:
+            with ui.tab_panel(_name):
+                _slots[_name] = ui.column().classes('w-full')
+
+    _activate('general')
+
+    # Identity watch: app.storage.user is per-BROWSER, so logging in as
+    # ANOTHER (lesser-privilege) user from the same browser swaps the
+    # tokens WITHOUT rebuilding this page — a page built as admin would
+    # keep hammering admin endpoints with a non-admin token (403 storm,
+    # "SSE looks dead"). When the stored role stops being admin, leave.
+    def _watch_role() -> None:
+        if not _is_admin():
+            ui.navigate.to('/')
+
+    ui.timer(5.0, _watch_role)
 
 
 def _general_panel() -> None:

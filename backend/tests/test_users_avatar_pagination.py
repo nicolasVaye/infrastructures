@@ -20,6 +20,9 @@ async def client(tmp_path, monkeypatch):
     import app.core.db as db
     db._engine = None
     db._session_factory = None
+    # ASGITransport does not run the lifespan: create schema + seed admin.
+    from app.bootstrap import ensure_schema
+    await ensure_schema()
     from app.main import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         yield c

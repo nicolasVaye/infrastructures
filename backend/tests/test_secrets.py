@@ -11,7 +11,6 @@ import pytest
 
 def _validate(jwt: str, seed_pw: str) -> None:
     import os
-    os.environ.pop("INSECURE_DEV", None)
     os.environ["JWT_SECRET"] = jwt
     os.environ["SEED_ADMIN_PASSWORD"] = seed_pw
     from app.core import config

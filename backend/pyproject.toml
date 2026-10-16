@@ -31,6 +31,9 @@ infrastructures-shared = { path = "../shared", editable = true }
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Tests intentionally sign with short HMAC keys (fixtures + the default
+# dev JWT secret): PyJWT's RFC 7518 advisory is noise here, not a finding.
+filterwarnings = ["ignore:The HMAC key is .* bytes long"]
 
 [build-system]
 requires = ["hatchling"]

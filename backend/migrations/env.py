@@ -1,10 +1,11 @@
 """Alembic environment: async engine, driven programmatically or via CLI.
 
-Runs with the application's DATABASE_URL (pydantic settings). The API and
-workers call ``command.upgrade(cfg, "head")`` from app.bootstrap on startup
-(the connection is passed in via cfg.attributes['connection'] so migrations
-run inside the caller's advisory-locked transaction); ``alembic revision``
-autogeneration works from the CLI with a standalone engine.
+Runs with the application's DATABASE_URL (pydantic settings, async driver
+kept as-is: +asyncpg / +aiosqlite — async_engine_from_config needs an async
+dialect). The API and workers call ``command.upgrade(cfg, "head")`` from
+app.bootstrap on startup, inside a worker thread (env.py owns its event
+loop there); ``alembic revision`` autogeneration works from the CLI with a
+standalone engine.
 """
 
 from __future__ import annotations
@@ -27,10 +28,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option(
-    "sqlalchemy.url",
-    get_settings().database_url.replace("+asyncpg", ""),
-)
+config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 target_metadata = Base.metadata
 
@@ -53,13 +51,6 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = config.attributes.get("connection")
-    if connectable is not None:
-        # Bootstrap path: reuse the caller's (advisory-locked) connection.
-        # run_sync bridges the AsyncConnection to the sync Connection that
-        # Alembic's migration context expects.
-        await connectable.run_sync(do_run_migrations)
-        return
     section = config.get_section(config.config_ini_section) or {}
     engine = async_engine_from_config(section, prefix="sqlalchemy.",
                                       poolclass=pool.NullPool)

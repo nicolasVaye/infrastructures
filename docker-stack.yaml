@@ -1,0 +1,151 @@
+# Infrastructures — production stack for Docker Swarm (multi-node scale-out).
+#
+#   cp .env.example .env            # set STRONG secrets (the backend fail-fasts)
+#   make swarm-init                 # once per cluster (single node is fine)
+#   make swarm-deploy               # deploy / rolling update (start-first)
+#
+# Differences vs docker-compose.yaml (the dev stack):
+#   - no build: images must be pushed to a registry reachable by every node;
+#     build & push with: docker buildx build --push -t <REG>/infra-backend:TAG -f backend/Dockerfile .
+#                        docker buildx build --push -t <REG>/infra-frontend:TAG -f frontend/Dockerfile .
+#     then export REG=<registry> TAG=<version> before deploying.
+#   - frontend must be routed through a sticky-session reverse proxy
+#     (Traefik config below): NiceGUI holds a WebSocket + per-replica
+#     session storage, so a browser MUST land on the same replica.
+#   - Traefik terminates TLS (ACME/Let's Encrypt) and never buffers SSE.
+#   - Postgres is a SINGLE service (Swarm is not a database HA story);
+#     pin it to a labelled node and back it up externally, or point
+#     DATABASE_URL at a managed instance instead.
+
+version: "3.8"
+
+services:
+
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.swarm.endpoint=unix:///var/run/docker.sock
+      - --providers.swarm.exposedByDefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.redirs.entrypoint.to=websecure
+      - --entrypoints.websecure.http.redirs.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks: [public]
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+
+  frontend:
+    image: ${REG:-localhost}/infra-frontend:${TAG:-latest}
+    environment:
+      BACKEND_URL: http://backend:8000
+      STORAGE_SECRET: ${STORAGE_SECRET}
+      HOST: 0.0.0.0
+    networks: [public, private]
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      rollback_config: { parallelism: 1 }
+      resources:
+        limits: { memory: 512M }
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.frontend.rule=Host(`${DOMAIN:-infra.local}`)
+        - traefik.http.routers.frontend.entrypoints=websecure
+        - traefik.http.routers.frontend.tls.certresolver=le
+        - traefik.http.services.frontend.loadbalancer.server.port=8080
+        # STICKY sessions: a NiceGUI websocket must always reach the same
+        # replica, or the browser loses its server-side storage mid-session.
+        - traefik.http.services.frontend.loadbalancer.sticky.cookie=true
+        - traefik.http.services.frontend.loadbalancer.sticky.cookie.name=infra_sticky
+        # NiceGUI traffic is websocket-heavy: generous timeouts.
+        - traefik.http.middlewares.gzip.compress=true
+    depends_on: [backend]
+
+  backend:
+    image: ${REG:-localhost}/infra-backend:${TAG:-latest}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-infra}:${DB_PASSWORD}@postgres:5432/infrastructures
+      JWT_SECRET: ${JWT_SECRET}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      CORS_ORIGINS: '["https://${DOMAIN:-infra.local}"]'
+      OIDC_REDIRECT_BASE_URL: https://${DOMAIN:-infra.local}
+      TRUSTED_PROXIES: '["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]'
+    networks: [private]
+    deploy:
+      replicas: 3
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      resources:
+        limits: { memory: 512M }
+      labels:
+        # Internal-only: no Traefik route, the frontend proxies API traffic
+        # server-side. Browsers never talk to the backend directly.
+        - traefik.enable=false
+
+  worker:
+    # Same image as the backend; only the command differs. Scale freely:
+    # every replica claims jobs with FOR UPDATE SKIP LOCKED.
+    image: ${REG:-localhost}/infra-backend:${TAG:-latest}
+    command: ["uv", "run", "python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-infra}:${DB_PASSWORD}@postgres:5432/infrastructures
+      JWT_SECRET: ${JWT_SECRET}
+      SCHEDULER: "0"
+    networks: [private]
+    deploy:
+      replicas: 4
+      resources:
+        limits: { memory: 512M }
+
+  scheduler:
+    # Exactly ONE instance (CRON enqueues must not be duplicated).
+    image: ${REG:-localhost}/infra-backend:${TAG:-latest}
+    command: ["uv", "run", "python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-infra}:${DB_PASSWORD}@postgres:5432/infrastructures
+      JWT_SECRET: ${JWT_SECRET}
+      SCHEDULER: "1"
+    networks: [private]
+    deploy:
+      replicas: 1
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-infra}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: infrastructures
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [private]
+    deploy:
+      replicas: 1
+      placement:
+        # Pin the database to a dedicated, backed-up node.
+        constraints: [node.labels.db == true]
+
+networks:
+  public:
+    driver: overlay
+  private:
+    driver: overlay
+    attachable: false
+
+volumes:
+  pgdata: {}
+  letsencrypt: {}

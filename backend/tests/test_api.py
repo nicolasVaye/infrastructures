@@ -14,7 +14,7 @@ def anyio_backend() -> str:
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/test.db")
-    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("JWT_SECRET", "x" * 40)
     monkeypatch.setenv("INSECURE_DEV", "1")
 
     # reset cached settings/engine so env changes take effect
@@ -23,6 +23,11 @@ async def client(tmp_path, monkeypatch):
     import app.core.db as db
     db._engine = None
     db._session_factory = None
+
+    # httpx ASGITransport does NOT run the app lifespan, so the schema and
+    # the seed admin are created here exactly like startup does.
+    from app.bootstrap import ensure_schema
+    await ensure_schema()
 
     from app.main import app
     async with AsyncClient(
@@ -90,5 +95,5 @@ async def test_login_flow_and_jobs(client: AsyncClient):
     # logout revokes the session
     resp = await client.post("/auth/logout", headers=auth)
     assert resp.status_code == 200
-    resp = await client.get("/sessions", headers=auth)  # token still valid, session gone
-    assert resp.json() == []
+    resp = await client.get("/sessions", headers=auth)  # revoked session → 401
+    assert resp.status_code == 401

@@ -31,9 +31,10 @@ class AuditService:
         """Deprecated: the backend records audit entries server-side."""
         logger.debug('AuditService.log() is a no-op: auditing moved to the backend.')
 
-    def get_recent(self, *, limit: int = 100, action: str | None = None,
+    def get_recent(self, *, limit: int = 100, offset: int = 0,
+                   action: str | None = None,
                    actions: list[str] | None = None) -> list[AuditEntry]:
-        params: dict = {'limit': limit}
+        params: dict = {'limit': limit, 'offset': offset}
         if actions:
             # Multi-select filter: comma-separated values (see GET /audit).
             params['actions'] = ','.join(actions)
@@ -54,9 +55,16 @@ class AuditService:
             for e in entries
         ]
 
-    def count(self, action: str | None = None) -> int:
-        params = {'action': action} if action else None
-        data = self.session.get('/audit/count', params=params)
+    def count(self, action: str | None = None,
+              actions: list[str] | None = None) -> int:
+        params: dict = {}
+        if actions:
+            # Same filter shape as get_recent, so the pager's total always
+            # matches the rows it pages through.
+            params['actions'] = ','.join(actions)
+        elif action:
+            params['action'] = action
+        data = self.session.get('/audit/count', params=params or None)
         return int((data or {}).get('count', 0))
 
     def clear(self) -> int:

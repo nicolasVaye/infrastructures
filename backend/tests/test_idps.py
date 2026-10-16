@@ -20,7 +20,7 @@ def anyio_backend() -> str:
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/test.db")
-    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("JWT_SECRET", "x" * 40)
     monkeypatch.setenv("INSECURE_DEV", "1")
 
     from app.core import config
@@ -28,6 +28,9 @@ async def client(tmp_path, monkeypatch):
     import app.core.db as db
     db._engine = None
     db._session_factory = None
+    # ASGITransport does not run the lifespan: create schema + seed admin.
+    from app.bootstrap import ensure_schema
+    await ensure_schema()
 
     from app.main import app
     async with AsyncClient(

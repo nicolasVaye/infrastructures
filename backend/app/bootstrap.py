@@ -26,8 +26,8 @@ _SEED_ROLES = [
 ]
 
 
-async def run_migrations(conn) -> None:
-    """Run ``alembic upgrade head`` against the engine's connection.
+async def run_migrations() -> None:
+    """Run ``alembic upgrade head`` in a worker thread.
 
     Uses Alembic's programmatic API: the migration directory ships with the
     code (backend/migrations), the baseline revision creates the current
@@ -35,7 +35,14 @@ async def run_migrations(conn) -> None:
     revertible and applied exactly once per database, unlike the old
     "ALTER TABLE IF NOT EXISTS" bootstrap. The advisory lock held by the
     caller serializes concurrent container startups.
+
+    env.py drives an asyncio loop of its own (``asyncio.run``), which is
+    impossible inside the caller's already-running event loop — so the
+    upgrade runs in a separate thread and env.py connects with its own
+    engine. Startup serialization is preserved because the caller holds the
+    transaction-scoped advisory lock for the whole duration of the upgrade.
     """
+    import asyncio
     from alembic import command
     from alembic.config import Config
     from pathlib import Path
@@ -43,12 +50,8 @@ async def run_migrations(conn) -> None:
     migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
     cfg = Config()
     cfg.set_main_option("script_location", str(migrations_dir))
-    cfg.set_main_option(
-        "sqlalchemy.url", get_settings().database_url.replace("+asyncpg", ""))
-    # Reuse the caller's connection so everything runs inside the same
-    # advisory-locked transaction scope as the seeding below.
-    cfg.attributes["connection"] = conn
-    command.upgrade(cfg, "head")
+    # env.py reads the URL from the app settings (async driver included).
+    await asyncio.to_thread(command.upgrade, cfg, "head")
 
 
 # Advisory lock key: serialises schema creation/seeding when several
@@ -60,6 +63,7 @@ _LOCK_KEY = 918273645
 _WEAK_SECRETS = {
     "change_me_in_production", "change-me-in-production", "changeme",
     "please-change-me", "secret", "test", "test-secret", "insecure",
+    "admin",
 }
 
 
@@ -101,11 +105,13 @@ async def ensure_schema() -> None:
     """
     settings = get_settings()
     validate_runtime_secrets()
+    is_sqlite = settings.database_url.startswith("sqlite")
     engine = get_engine()
     async with engine.begin() as conn:
-        await conn.execute(
-            text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY}
-        )
+        if not is_sqlite:
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY}
+            )
         # Versioned schema: Alembic owns the database shape from now on
         # (see migrations/). create_all + ad-hoc "ALTER TABLE IF NOT EXISTS"
         # statements cannot express RENAMES, type changes or data backfills,
@@ -113,7 +119,7 @@ async def ensure_schema() -> None:
         # eventually need. If Alembic is unavailable (stripped runtime), we
         # fall back to create_all for throw-away dev databases.
         try:
-            await run_migrations(conn)
+            await run_migrations()
         except ImportError:
             logger.warning("Alembic not installed — falling back to "
                            "create_all (dev only; production images must "
@@ -122,15 +128,16 @@ async def ensure_schema() -> None:
         # Global SSE event sequence: every backend replica draws the next
         # event number from the SAME Postgres sequence, so Last-Event-ID
         # replay keeps a coherent order across a scaled-out backend fleet.
-        if not settings.database_url.startswith("sqlite"):
+        if not is_sqlite:
             await conn.execute(text(
                 "CREATE SEQUENCE IF NOT EXISTS infra_event_seq START 1"
             ))
 
     async with get_session_factory()() as session:
-        await session.execute(
-            text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY}
-        )
+        if not is_sqlite:
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY}
+            )
         role_ids: dict[str, int] = {}
         for name, description in _SEED_ROLES:
             role = (await session.scalars(

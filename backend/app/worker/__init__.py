@@ -51,8 +51,9 @@ async def demo_sleep(job: JobRecord, params: dict[str, Any]) -> dict[str, Any]:
     while slept < seconds:
         if params.get("cancel_requested"):
             raise CancelledError()
-        await asyncio.sleep(min(1.0, seconds - slept))
-        slept += 1.0
+        chunk = min(1.0, seconds - slept)
+        await asyncio.sleep(chunk)
+        slept += chunk
     return {"slept": slept}
 
 

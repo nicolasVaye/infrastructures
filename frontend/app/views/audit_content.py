@@ -10,12 +10,14 @@ from nicegui import app, ui
 
 from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
+from components.pager import pager
 from core.database import get_session
 from models.audit import AuditAction
 from models.enums import UserRole
 from services.audit_service import AuditService
 from services.i18n import t
 from services.tz import format_local, get_app_timezone
+from shared.client.async_client import ApiError
 
 # action value -> (Material icon, badge class) for the activity list.
 _ACTION_META: dict[str, tuple[str, str]] = {
@@ -84,7 +86,7 @@ _AUDIT_THEMES: list[tuple[str, tuple[str, ...]]] = [
 _THEME_ACTIONS: dict[str, tuple[str, ...]] = dict(_AUDIT_THEMES)
 
 # How many rows the list shows at once.
-_LIMIT = 200
+_PAGE_SIZE = 50
 
 
 def _is_admin() -> bool:
@@ -100,7 +102,7 @@ def content() -> None:
     # Filter state: selected category ('all' or a group key) plus the set of
     # selected action values (multi-select). An empty set inside a category
     # means "every action of that category".
-    state = {'category': 'all', 'actions': set()}
+    state = {'category': 'all', 'actions': set(), 'page': 1}
 
     def _effective_actions() -> list[str] | None:
         """Translate the two combos into the service's `actions` argument.
@@ -117,27 +119,45 @@ def content() -> None:
 
     @ui.refreshable
     def audit_table() -> None:
-        with get_session() as session:
-            service = AuditService(session)
-            total = service.count()
-            entries = [
-                {
-                    'created_at': e.created_at,
-                    'action': e.action,
-                    'username': e.username,
-                    'target': e.target,
-                    'details': e.details,
-                    'ip': e.ip,
-                }
-                for e in service.get_recent(limit=_LIMIT,
-                                           actions=_effective_actions())
-            ]
+        # Server-side pagination: only the CURRENT page crosses the wire.
+        # 401/403 render a muted note instead of raising: 401 = heartbeat
+        # already redirecting; 403 = identity changed mid-session (see the
+        # /settings role watcher) — the page closes itself shortly.
+        try:
+            with get_session() as session:
+                service = AuditService(session)
+                total = service.count(actions=_effective_actions())
+                state['page'] = min(state['page'],
+                                    max(1, -(-total // _PAGE_SIZE)))
+                entries = [
+                    {
+                        'created_at': e.created_at,
+                        'action': e.action,
+                        'username': e.username,
+                        'target': e.target,
+                        'details': e.details,
+                        'ip': e.ip,
+                    }
+                    for e in service.get_recent(limit=_PAGE_SIZE,
+                                               offset=(state['page'] - 1) * _PAGE_SIZE,
+                                               actions=_effective_actions())
+                ]
+        except ApiError as exc:
+            if getattr(exc, 'status_code', None) in (401, 403):
+                with ui.column().classes('card w-full items-center gap-2 p-8'):
+                    ui.icon('lock', size='1.5rem').classes('text-muted')
+                    ui.label(t('appsettings.admin_only')).classes('text-muted')
+                return
+            raise
         # Display timezone: timestamps are stored UTC, the admin-configured
         # zone (GET /app/timezone, short-cached) drives how they render.
         display_tz = get_app_timezone()
 
-        ui.label(t('audit.showing').format(shown=len(entries), total=total)) \
-            .classes('text-xs text-muted mb-2')
+        def _goto_page(p: int) -> None:
+            state['page'] = p
+            audit_table.refresh()
+
+        pager(total, state['page'], _PAGE_SIZE, _goto_page)
 
         if not entries:
             with ui.column().classes('card w-full items-center gap-2 p-8'):
@@ -235,12 +255,14 @@ def content() -> None:
                 the second combo to the new category's actions."""
                 state['category'] = category_select.value or 'all'
                 state['actions'].clear()
+                state['page'] = 1
                 action_select.set_options(_action_options())
                 action_select.set_value([])
                 audit_table.refresh()
 
             def _on_actions_change(_) -> None:
                 state['actions'] = set(action_select.value or [])
+                state['page'] = 1
                 audit_table.refresh()
 
             category_select.on_value_change(_on_category_change)
@@ -251,6 +273,7 @@ def content() -> None:
                 alone would be a no-op when the category is already 'all')."""
                 category_select.set_value('all')
                 state['actions'].clear()
+                state['page'] = 1
                 action_select.set_options(_action_options())
                 action_select.set_value([])
                 audit_table.refresh()
@@ -267,17 +290,26 @@ def content() -> None:
 
     audit_table()
 
-    # Live updates: logins/logouts/kicks emit 'sessions_changed' — new audit
-    # rows should appear without a manual refresh, like the Users/Sessions
-    # tabs. Same SSE counter pattern; 60s fallback poll as safety net.
+    # Live updates: logins/logouts/kicks emit 'sessions_changed', profile/
+    # avatar changes emit 'user_updated' — the resulting audit rows should
+    # appear without a manual refresh, like the Users/Sessions tabs. Same
+    # SSE counter pattern; 60s fallback poll as safety net.
     from views._common import safe_auto_refresh
 
-    seen = {'counter': app.storage.user.get('sessions_refresh_counter', 0)}
+    seen = {'sessions': app.storage.user.get('sessions_refresh_counter', 0),
+            'users': app.storage.user.get('users_refresh_counter', 0)}
 
     def _on_event() -> None:
+        changed = False
         counter = app.storage.user.get('sessions_refresh_counter', 0)
-        if counter != seen['counter']:
-            seen['counter'] = counter
+        if counter != seen['sessions']:
+            seen['sessions'] = counter
+            changed = True
+        counter = app.storage.user.get('users_refresh_counter', 0)
+        if counter != seen['users']:
+            seen['users'] = counter
+            changed = True
+        if changed:
             safe_auto_refresh(audit_table.refresh)()
 
     ui.timer(1.0, _on_event)

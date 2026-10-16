@@ -9,15 +9,15 @@ from core.security import logout, current_user
 from services import i18n
 
 
-# Sections surfaced through the mobile burger sheet, beyond the 3 primary tabs
-_SHEET_SECTIONS = [
-    ('nav.orders',        'fact_check',  '/orders'),
-    ('nav.pallets',       'pallet',      '/pallets'),
-    ('nav.packing',       'inventory_2', '/packing'),
-    ('nav.print_demo',    'print',       '/print-demo'),
-    ('nav.icons',         'grid_view',   '/icons'),
-    ('nav.design_system', 'palette',     '/design-system'),
-]
+# Sections surfaced through the mobile burger sheet, beyond the primary tabs
+# of the floating bar (Home, Examples). The sheet mirrors the nav-bar, so it
+# carries the same role gating as the desktop sidebar (Jobs = admin only).
+def _sheet_sections() -> list:
+    from models.enums import UserRole
+    sections = [('nav.examples', 'category', '/examples')]
+    if app.storage.user.get('role') == UserRole.ADMIN.value:
+        sections.append(('nav.jobs', 'list_alt', '/jobs'))
+    return sections
 
 
 @contextmanager
@@ -125,113 +125,120 @@ def frame(title: str, version: str, get_logo_func=None):
 
         sidebar_labels = []
         nav_links = []
-        sidebar_hints = []
 
-        with ui.link('', '/').classes('w-full no-underline text-black').style('border-radius: 2rem;') as dashboard_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                dashboard_icon = ui.icon('dashboard').classes('ml-5 text-2xl flex-shrink-0')
-                dashboard_label = i18n.bind(ui.label('Dashboard').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.dashboard')
-                sidebar_labels.append(dashboard_label)
-            sidebar_hints.append(sidebar_hint('nav.dashboard'))
-        nav_links.append({'link': dashboard_link, 'icon': dashboard_icon, 'patterns': ['/'], 'exact': True})
+        def add_nav_item(target: str, icon_name: str, label_key: str,
+                         patterns: list, exact: bool = False) -> None:
+            """One sidebar entry: link + icon + collapsible label + hover hint.
 
-        with ui.link('', '/shipping').classes('w-full no-underline text-black').style('border-radius: 2rem;') as shipping_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                shipping_icon = ui.icon('local_shipping').classes('ml-5 text-2xl flex-shrink-0')
-                shipping_label = i18n.bind(ui.label('Shipping').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.shipping')
-                sidebar_labels.append(shipping_label)
-            sidebar_hints.append(sidebar_hint('nav.shipping'))
-        nav_links.append({'link': shipping_link, 'icon': shipping_icon, 'patterns': ['/shipping', '/customer'], 'exact': False})
-
-        with ui.link('', '/production').classes('w-full no-underline text-black').style('border-radius: 2rem;') as production_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                production_icon = ui.icon('precision_manufacturing').classes('ml-5 text-2xl flex-shrink-0')
-                production_label = i18n.bind(ui.label('Production').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.production')
-                sidebar_labels.append(production_label)
-            sidebar_hints.append(sidebar_hint('nav.production'))
-        nav_links.append({'link': production_link, 'icon': production_icon, 'patterns': ['/production'], 'exact': False})
-
-        with ui.link('', '/orders').classes('w-full no-underline text-black').style('border-radius: 2rem;') as orders_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                orders_icon = ui.icon('fact_check').classes('ml-5 text-2xl flex-shrink-0')
-                orders_label = i18n.bind(ui.label('Orders').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.orders')
-                sidebar_labels.append(orders_label)
-            sidebar_hints.append(sidebar_hint('nav.orders'))
-        nav_links.append({'link': orders_link, 'icon': orders_icon, 'patterns': ['/orders'], 'exact': False})
-
-        with ui.link('', '/pallets').classes('w-full no-underline text-black').style('border-radius: 2rem;') as pallets_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                pallets_icon = ui.icon('pallet').classes('ml-5 text-2xl flex-shrink-0')
-                pallets_label = i18n.bind(ui.label('Pallets').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.pallets')
-                sidebar_labels.append(pallets_label)
-            sidebar_hints.append(sidebar_hint('nav.pallets'))
-        nav_links.append({'link': pallets_link, 'icon': pallets_icon, 'patterns': ['/pallets'], 'exact': False})
-
-        with ui.link('', '/packing').classes('w-full no-underline text-black').style('border-radius: 2rem;') as packing_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                packing_icon = ui.icon('inventory_2').classes('ml-5 text-2xl flex-shrink-0')
-                packing_label = i18n.bind(ui.label('Packing').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.packing')
-                sidebar_labels.append(packing_label)
-            sidebar_hints.append(sidebar_hint('nav.packing'))
-        nav_links.append({'link': packing_link, 'icon': packing_icon, 'patterns': ['/packing'], 'exact': False})
-
-        with ui.link('', '/print-demo').classes('w-full no-underline text-black').style('border-radius: 2rem;') as print_demo_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                print_demo_icon = ui.icon('print').classes('ml-5 text-2xl flex-shrink-0')
-                print_demo_label = i18n.bind(ui.label('Print Demo').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.print_demo')
-                sidebar_labels.append(print_demo_label)
-            sidebar_hints.append(sidebar_hint('nav.print_demo'))
-        nav_links.append({'link': print_demo_link, 'icon': print_demo_icon, 'patterns': ['/print-demo'], 'exact': False})
-
-
-        from models.enums import UserRole as _Role
-        if app.storage.user.get('role') == _Role.ADMIN.value:
-            with ui.link('', '/jobs').classes('w-full no-underline text-black').style('border-radius: 2rem;') as jobs_link:
+            The created element attaches to whatever container is current when
+            the function is called (NiceGUI's element stack is dynamic, not
+            lexical), and the highlight data is appended to nav_links so both
+            the click handler and the path watcher can highlight the item.
+            """
+            with ui.link('', target).classes('w-full no-underline text-black').style('border-radius: 2rem;') as link:
                 with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                    jobs_icon = ui.icon('list_alt').classes('ml-5 text-2xl flex-shrink-0')
-                    jobs_label = i18n.bind(ui.label('Jobs').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.jobs')
-                    sidebar_labels.append(jobs_label)
-                sidebar_hints.append(sidebar_hint('nav.jobs'))
-                nav_links.append({'link': jobs_link, 'icon': jobs_icon, 'patterns': ['/jobs'], 'exact': False})
+                    icon = ui.icon(icon_name).classes('ml-5 text-2xl flex-shrink-0')
+                    label = i18n.bind(ui.label(label_key.split('.')[-1].title()).classes('text-lg sidebar-label ml-3 flex-shrink-0'), label_key)
+                    sidebar_labels.append(label)
+                # Inside the link scope: the tooltip attaches to the link.
+                sidebar_hint(label_key)
+            nav_links.append({'link': link, 'icon': icon, 'patterns': patterns, 'exact': exact})
 
+        def add_nav_branch(target: str, icon_name: str, label_key: str,
+                           children: list) -> None:
+            """Expandable nav entry: treeview branches below the parent link.
 
-        ui.separator()
+            Clicking the parent navigates AND toggles the branch container
+            (the whole entry is the toggle target — no separate expander
+            handle to click precisely). Children register their own
+            highlight entry; the parent matches its path exactly so a child
+            page highlights the child, not the parent.
+            """
+            with ui.link('', target).classes('w-full no-underline text-black').style('border-radius: 2rem;') as link:
+                with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
+                    icon = ui.icon(icon_name).classes('ml-5 text-2xl flex-shrink-0')
+                    label = i18n.bind(ui.label(label_key.split('.')[-1].title()).classes('text-lg sidebar-label ml-3 flex-shrink-0'), label_key)
+                    sidebar_labels.append(label)
+                    # Chevron state is carried by the ICON NAME, not by a CSS
+                    # rotation: the swapped glyph is identical on every
+                    # browser (a rotated chevron rendered inconsistently in
+                    # Firefox) and always matches the branch visibility.
+                    chevron = ui.icon('chevron_right') \
+                        .classes('sidebar-nav-branch-chevron ml-auto text-lg text-muted flex-shrink-0') \
+                        .style('margin-right: 1.25rem;')
+                sidebar_hint(label_key)
+            nav_links.append({'link': link, 'icon': icon, 'patterns': [target], 'exact': True})
 
-        with ui.link('', '/icons').classes('w-full no-underline text-black').style('border-radius: 2rem;') as icons_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                icons_icon = ui.icon('grid_view').classes('ml-5 text-2xl flex-shrink-0')
-                icons_label = i18n.bind(ui.label('Icons').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.icons')
-                sidebar_labels.append(icons_label)
-            sidebar_hints.append(sidebar_hint('nav.icons'))
-        nav_links.append({'link': icons_link, 'icon': icons_icon, 'patterns': ['/icons'], 'exact': False})
+            def _toggle() -> None:
+                if 'closed' in branch_box.classes:
+                    branch_box.classes(remove='closed')
+                    chevron.name = 'expand_more'
+                else:
+                    branch_box.classes(add='closed')
+                    chevron.name = 'chevron_right'
 
+            link.on('click', lambda _: _toggle())
 
-        with ui.link('', '/design-system').classes('w-full no-underline text-black').style('border-radius: 2rem;') as design_system_link:
-            with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                design_system_icon = ui.icon('palette').classes('ml-5 text-2xl flex-shrink-0')
-                design_system_label = i18n.bind(ui.label('Design System').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'nav.design_system')
-                sidebar_labels.append(design_system_label)
-            sidebar_hints.append(sidebar_hint('nav.design_system'))
-        nav_links.append({'link': design_system_link, 'icon': design_system_icon, 'patterns': ['/design-system'], 'exact': False})
+            with ui.element('div').classes('sidebar-nav-children closed') as branch_box:
+                for child_key, child_target in children:
+                    with ui.link('', child_target).classes('w-full no-underline text-black').style('border-radius: 2rem;') as clink:
+                        with ui.row().classes('items-center mb-1 mt-1 cursor-pointer w-full no-wrap'):
+                            # Treeview leaf: a small muted bullet, not a heavy
+                            # arrow glyph (the arrow_right triangle read as a
+                            # play button next to every branch).
+                            cicon = ui.icon('fiber_manual_record', size='0.5rem') \
+                                .classes('text-muted flex-shrink-0') \
+                                .style('width: 22px; display: inline-flex; justify-content: center;')
+                            clabel = i18n.bind(ui.label(child_key.split('.')[-1].title()).classes('sidebar-label ml-1 flex-shrink-0'), child_key)
+                            sidebar_labels.append(clabel)
+                    nav_links.append({'link': clink, 'icon': cicon, 'patterns': [child_target], 'exact': True})
 
-        ui.separator()
+        # Whole-drawer scroll wrapper (fills the drawer height): the
+        # scrollbar runs the full nav-bar and the sticky bottom hub stays
+        # pinned over it (see .sidebar-nav-scroll / .sidebar-bottom CSS).
+        with ui.element('div').classes('sidebar-nav-scroll'):
+            add_nav_item('/', 'dashboard', 'nav.dashboard', ['/'], exact=True)
+            # Examples hub: every demo section lives in ONE sub-page with a
+            # tab per former top-level page, so the nav bar stays short. The
+            # item also highlights on the legacy paths (deep links still work).
+            add_nav_item('/examples', 'category', 'nav.examples',
+                         ['/examples', '/shipping', '/customer', '/production',
+                          '/orders', '/pallets', '/packing', '/print-demo',
+                          '/icons', '/design-system'])
+            from models.enums import UserRole as _Role
+            if app.storage.user.get('role') == _Role.ADMIN.value:
+                add_nav_item('/jobs', 'list_alt', 'nav.jobs', ['/jobs'])
+            # TEMPORARY: 8 dummy links (blank sub-pages) to stress-test the
+            # sidebar scrolling on short viewports. Remove together with
+            # views/demo_content.py and the /demo-* routes in main.py.
+            # Demo 3 carries expandable sub-links (treeview branches) — a UX
+            # probe for grouping nav entries under a parent.
+            for _i in range(1, 9):
+                if _i == 3:
+                    add_nav_branch(f'/demo-{_i}', 'science', f'nav.demo_{_i}',
+                                   [(f'nav.demo_{_i}_{_b}', f'/demo-{_i}/{_b}')
+                                    for _b in (1, 2, 3)])
+                else:
+                    add_nav_item(f'/demo-{_i}', 'science', f'nav.demo_{_i}', [f'/demo-{_i}'])
 
-        # App Settings hub is pinned at the BOTTOM of the nav bar (with the
-        # version label), so it keeps its own dedicated spot whatever the
-        # number of nav links above. Admin only — role comes from the login
-        # snapshot in the shared session storage.
-        from models.enums import UserRole as _RoleBottom
-        with ui.column().classes('absolute bottom-2 left-0 right-4 items-stretch gap-0 px-2') as sidebar_bottom:
-            if app.storage.user.get('role') == _RoleBottom.ADMIN.value:
-                with ui.link('', '/settings').classes('w-full no-underline text-black').style('border-radius: 2rem;') as settings_link:
-                    with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
-                        settings_icon = ui.icon('tune').classes('ml-5 text-2xl flex-shrink-0')
-                        settings_label = i18n.bind(ui.label('App Settings').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'appsettings.title')
-                        sidebar_labels.append(settings_label)
-                    sidebar_hints.append(sidebar_hint('appsettings.title'))
-                nav_links.append({'link': settings_link, 'icon': settings_icon, 'patterns': ['/settings'], 'exact': False})
-            version_label = ui.label(version).classes('text-xs text-muted sidebar-label mr-2')
-            sidebar_labels.append(version_label)
+            # App Settings hub is pinned at the BOTTOM of the nav bar (with
+            # the version label). It lives INSIDE the scrolling wrapper but
+            # is position: sticky (see .sidebar-bottom CSS): the scrollbar
+            # spans the full nav-bar and the hub always stays visible,
+            # without ever overlapping the links. Admin only — role comes
+            # from the login snapshot in the shared session storage.
+            from models.enums import UserRole as _RoleBottom
+            with ui.column().classes('sidebar-bottom w-full items-stretch gap-0 px-2 pb-2') as sidebar_bottom:
+                if app.storage.user.get('role') == _RoleBottom.ADMIN.value:
+                    with ui.link('', '/settings').classes('w-full no-underline text-black').style('border-radius: 2rem;') as settings_link:
+                        with ui.row().classes('items-center mb-2 mt-2 cursor-pointer w-full no-wrap'):
+                            settings_icon = ui.icon('tune').classes('ml-5 text-2xl flex-shrink-0')
+                            settings_label = i18n.bind(ui.label('App Settings').classes('text-lg sidebar-label ml-3 flex-shrink-0'), 'appsettings.title')
+                            sidebar_labels.append(settings_label)
+                        sidebar_hint('appsettings.title')
+                    nav_links.append({'link': settings_link, 'icon': settings_icon, 'patterns': ['/settings'], 'exact': False})
+                version_label = ui.label(version).classes('text-xs text-muted sidebar-label mr-2')
+                sidebar_labels.append(version_label)
 
         def apply_highlight(active_item) -> None:
             for item in nav_links:
@@ -280,22 +287,25 @@ def frame(title: str, version: str, get_logo_func=None):
         # on_connect fires only for a real WebSocket, so bots never reach this
         ui.context.client.on_connect(_highlight_from_path)
 
-    # Vertical splitter handle straddling the sidebar's right separator.
-    # Rendered OUTSIDE the drawer with position:fixed, otherwise the drawer's
-    # scrollable content area pushes it below the nav links. The width is
-    # fully client-driven (see _SIDEBAR_SPLITTER_JS): dragging the handle
-    # resizes the drawer live between 100 and 400 px, a simple click toggles
-    # between icon-only (100 px) and standard (240 px), and the resulting
-    # width is persisted server-side via POST /sidebar-width. The chevron
-    # reflects the resulting state (wide -> collapse to the left).
-    with ui.element('div').classes('sidebar-collapse-handle') as handle:
-        handle_icon = ui.icon('chevron_left').classes('sidebar-collapse-handle-icon')
+        # Vertical splitter handle straddling the sidebar's right separator.
+        # It lives INSIDE the drawer and is anchored to its right edge by CSS
+        # (position: absolute; right: -5px in global-css.css, with the drawer
+        # itself as containing block — absolutely positioned elements whose
+        # containing block is outside the scroll area neither scroll with the
+        # links nor get clipped by them). Its position is therefore a
+        # CONSEQUENCE of the layout: every width phase — drag, click-toggle
+        # animation, Quasar restoring the model width after a tablet
+        # round-trip — moves it for free, with zero JavaScript bookkeeping.
+        # The old position:fixed copy rendered outside the drawer and needed
+        # its 'left' re-synced from JS on every such phase; each missed phase
+        # left the handle detached from the nav-bar edge.
+        with ui.element('div').classes('sidebar-collapse-handle') as handle:
+            handle_icon = ui.icon('chevron_left').classes('sidebar-collapse-handle-icon')
 
-    # sync drawer width, labels and handle to the persisted width
+    # sync drawer width and labels to the persisted width
     _sidebar_width = max(100, min(400, int(app.storage.user.get('sidebar-width', 240) or 240)))
     _collapsed = _sidebar_width < 180
     left_drawer.props(f'width={_sidebar_width}')
-    handle.style(f'left: {_sidebar_width - 5}px;')
     handle_icon.name = 'chevron_right' if _collapsed else 'chevron_left'
     for label in sidebar_labels:
         label.classes(add='collapsed' if _collapsed else 'expanded')
@@ -306,28 +316,16 @@ def frame(title: str, version: str, get_logo_func=None):
     with ui.column().classes('w-full items-stretch mobile-content'):
         yield
 
-    # About dialog
-    with ui.dialog() as about_dialog, ui.card().classes('dialog-card'):
-        i18n.bind(ui.label(i18n.t('about.title')).classes('dialog-title'), 'about.title')
-        i18n.bind(ui.label(i18n.t('about.body')).classes('dialog-body'), 'about.body')
-        with ui.element('div').classes('dialog-body'):
-            i18n.bind(ui.label(i18n.t('about.source')).classes('text-sm text-muted mb-2'), 'about.source')
-            i18n.bind(ui.link(i18n.t('about.repo'), 'https://github.com/frycodelab/nicegui-component-based', new_tab=True).classes('text-info').style('text-decoration: underline;'), 'about.repo')
-        with ui.element('div').classes('dialog-footer'):
-            i18n.bind(ui.button(i18n.t('action.close'), on_click=about_dialog.close, color='white').props('flat no-caps').classes('button button-primary button-sm'), 'action.close')
-
     # Mobile burger sheet with the remaining sections, hidden on desktop
+    sheet_sections = _sheet_sections()
     with ui.dialog().props('position=bottom') as menu_sheet, ui.card().classes('mobile-sheet'):
         ui.element('div').classes('mobile-sheet-handle')
         i18n.bind(ui.label(i18n.t('menu.all_sections')).classes('mobile-sheet-title'), 'menu.all_sections')
         with ui.element('div').classes('mobile-sheet-grid'):
-            for label_key, icon_name, target in _SHEET_SECTIONS:
+            for label_key, icon_name, target in sheet_sections:
                 with ui.element('div').classes('mobile-sheet-item').on('click', lambda _, t=target: [menu_sheet.close(), ui.navigate.to(t)]):
                     ui.icon(icon_name).classes('mobile-sheet-icon')
                     i18n.bind(ui.label(i18n.t(label_key)).classes('mobile-sheet-label'), label_key)
-            with ui.element('div').classes('mobile-sheet-item').on('click', lambda: [menu_sheet.close(), about_dialog.open()]):
-                ui.icon('info').classes('mobile-sheet-icon')
-                i18n.bind(ui.label(i18n.t('menu.about')).classes('mobile-sheet-label'), 'menu.about')
 
         # Account actions, moved here from the top bar on mobile
         i18n.bind(ui.label(i18n.t('account.account')).classes('mobile-sheet-title').style('margin-top: 20px;'),
@@ -360,21 +358,19 @@ def frame(title: str, version: str, get_logo_func=None):
             i18n.bind(ui.label(i18n.t('nav.home')).classes('mobile-nav-label'), 'nav.home')
         mobile_nav.append({'el': m_home, 'nav': True, 'patterns': ['/'], 'exact': True})
 
-        with ui.link('', '/shipping').classes('mobile-nav-item') as m_ship:
-            ui.icon('local_shipping').classes('mobile-nav-icon')
-            i18n.bind(ui.label(i18n.t('nav.shipping')).classes('mobile-nav-label'), 'nav.shipping')
-        mobile_nav.append({'el': m_ship, 'nav': True, 'patterns': ['/shipping', '/customer'], 'exact': False})
-
-        with ui.link('', '/production').classes('mobile-nav-item') as m_prod:
-            ui.icon('precision_manufacturing').classes('mobile-nav-icon')
-            i18n.bind(ui.label(i18n.t('nav.production')).classes('mobile-nav-label'), 'nav.production')
-        mobile_nav.append({'el': m_prod, 'nav': True, 'patterns': ['/production'], 'exact': False})
+        with ui.link('', '/examples').classes('mobile-nav-item') as m_examples:
+            ui.icon('category').classes('mobile-nav-icon')
+            i18n.bind(ui.label(i18n.t('nav.examples')).classes('mobile-nav-label'), 'nav.examples')
+        mobile_nav.append({'el': m_examples, 'nav': True,
+                           'patterns': ['/examples', '/shipping', '/customer', '/production',
+                                        '/orders', '/pallets', '/packing', '/print-demo',
+                                        '/icons', '/design-system'], 'exact': False})
 
         with ui.element('div').classes('mobile-nav-item').on('click', lambda: menu_sheet.open()) as m_menu:
             ui.icon('menu').classes('mobile-nav-icon')
             i18n.bind(ui.label(i18n.t('menu.menu')).classes('mobile-nav-label'), 'menu.menu')
         mobile_nav.append({'el': m_menu, 'nav': False,
-                           'patterns': [t for _, _, t in _SHEET_SECTIONS], 'exact': False})
+                           'patterns': [t for _, _, t in sheet_sections], 'exact': False})
 
     def apply_mobile_highlight(active_item) -> None:
         for item in mobile_nav:

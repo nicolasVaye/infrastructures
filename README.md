@@ -28,16 +28,34 @@ duplication des modèles de sérialisation.
 
 ## Démarrage
 
+### Mode minimal (développement) — 4 commandes
+
 ```bash
-cp .env.example .env          # changez les secrets
-docker compose up --build
+# 1. Prérequis : Docker + (optionnel) uv pour le dev sans Docker
+cp .env.example .env
+
+# 2. Mettez de VRAIS secrets dans .env (le backend refuse de démarrer sinon) :
+#    JWT_SECRET (≥ 32 chars), STORAGE_SECRET, SEED_ADMIN_PASSWORD
+nano .env        # ou vim
+
+# 3. Build + démarrage (Postgres + backend + workers + frontend + scheduler)
+make up          # = docker compose --profile keycloak up -d --build
+
+# 4. Vérifier que tout est sain
+make ps          # tous les services doivent passer "healthy"
+curl localhost:8000/health    # {"status":"ok","database":"ok"}
 ```
 
-- Frontend : http://localhost:8080 — **admin / admin** (changement de mot de passe forcé au 1er login)
+- Frontend : http://localhost:8080 — **admin / <votre SEED_ADMIN_PASSWORD>**
+  (changement de mot de passe forcé au 1er login)
 - API : http://localhost:8000/docs (OpenAPI)
-- Scalabilité : `docker compose up --scale backend=3 --scale worker=4`
+- Premier login Keycloak optionnel : profil déjà inclus dans `make up`.
 
-### Développement local (uv)
+**En cas de problème** : `make logs` (logs temps réel), `make restart`,
+`make rebuild` (rebuild complet). La CI locale se lance avec `make test`
+(voir « Tests » plus bas).
+
+### Développement local sans Docker (uv)
 
 ```bash
 uv sync                                # dans shared/, backend/, frontend/ (installe shared en éditable)
@@ -46,9 +64,55 @@ uv run python -m app.worker            # worker(s)
 BACKEND_URL=http://localhost:8000 uv run python main.py   # frontend (depuis frontend/app)
 ```
 
+Ou via le Makefile : `make dev-backend`, `make dev-worker`, `make dev-frontend`.
+
 Sans Docker, le backend retombe sur SQLite (`DATABASE_URL` non définie) — pratique pour débugger.
 Le backend refuse de démarrer avec un `JWT_SECRET` faible/par défaut : en local, exportez un
 secret quelconque (≥ 32 caractères) ou `INSECURE_DEV=1` pour un bac à sable jetable.
+
+### Déploiement scalé sur Docker Swarm (production)
+
+L'architecture (stateless partout, DB unique) est conçue pour le scale-out. Le fichier
+`docker-stack.yaml` décrit la stack production : **Traefik** (TLS auto + sticky sessions
+pour les websockets NiceGUI) devant **2 frontends**, **3 backends**, **4 workers**,
+**1 scheduler**, **1 Postgres** épinglé sur un nœud dédié.
+
+```bash
+# 0. Prérequis : un cluster Swarm (docker swarm init sur le manager — un seul
+#    nœud suffit pour tester), un registre d'images accessible, un DNS pointé.
+
+# 1. Secrets : .env avec JWT_SECRET, STORAGE_SECRET, SEED_ADMIN_PASSWORD,
+#    DB_PASSWORD, DOMAIN, ACME_EMAIL (email Let's Encrypt).
+
+# 2. Build & push des images (chaque nœud doit pouvoir les puller) :
+docker buildx build --push -t $REG/infra-backend:TAG -f backend/Dockerfile .
+docker buildx build --push -t $REG/infra-frontend:TAG -f frontend/Dockerfile .
+
+# 3. Étiquetez le nœud qui portera la base :
+docker node update --label-add db=true <nom-du-nœud>
+
+# 4. Déploiement (rolling update start-first, rollback auto en cas d'échec) :
+export REG=... TAG=... DOMAIN=...
+make swarm-init        # une fois par cluster
+make swarm-deploy      # = docker stack deploy -c docker-stack.yaml infrastructures
+
+# 5. Vérification & scaling à chaud :
+make swarm-ps                          # état des réplicas
+make swarm-scale BACKEND=5 WORKER=8    # scale sans interruption
+```
+
+**À lire avant de scaler** :
+- Le **frontend** exige des **sticky sessions** (déjà configurées dans le stack via
+  Traefik `loadbalancer.sticky.cookie`) : un websocket NiceGUI doit retomber sur la
+  même réplique. Pour partager les storages entre répliques, décommentez
+  `NICEGUI_REDIS_URL` dans `.env` et ajoutez un service Redis.
+- Le **backend** se scale librement (stateless, JWT + sessions en base, séquence
+  d'événements SSE globale via Postgres). Le **scheduler** reste à 1 réplicas.
+- **Postgres** n'est pas un service scalable : 1 instance épinglée + sauvegardes,
+  ou une instance managée (`DATABASE_URL` pointe dessus).
+- TLS est terminé par Traefik (ACME). Le trafic inter-services reste HTTP sur le
+  réseau overlay — chiffrez l'overlay (`docker network create -d overlay --opt encrypted`)
+  ou posez du mTLS pour un déploiement multi-tenant sensible.
 
 ## Authentification : une seule pour tous
 
@@ -160,18 +224,27 @@ Reste volontairement non couvert (voir plus bas « ce qu'il reste à faire ») :
 
 ## Ce qu'il reste à faire (volontairement hors squelette)
 
-- migrations Alembic (le squelette fait `create_all` + `ALTER IF NOT EXISTS` ciblés) ;
+- isolation multi-clients (tenant/organisation) — prochaine étape planifiée ;
 - load-balancer / k8s (HPA), PgBouncer devant Postgres ;
 - CSP sur le reverse-proxy de production (voir ci-dessus) ;
 - réseau inter-services chiffré pour le scale-out multi-hôtes (voir ci-dessus).
 
 ## Ce qui est désormais couvert
 
-- temps réel SSE (LISTEN/NOTIFY → fanout → `/events`, replay `Last-Event-ID`, watchdog client) ;
+- temps réel SSE (LISTEN/NOTIFY → fanout → `/events`, replay `Last-Event-ID`,
+  watchdog client, **séquence d'événements globale multi-réplicas via Postgres**) ;
 - rate limiting du login backend (audit-backed, multi-répliques) ;
 - rotation des refresh tokens avec détection de rejeu ;
 - mots de passe initiaux/reset aléatoires et uniques ;
-- refus de boot avec secrets faibles.
+- refus de boot avec secrets faibles (JWT **et** mot de passe admin seedé) ;
+- **migrations Alembic versionnées** (baseline 0001, appliquées au boot sous
+  advisory lock — plus de DDL ad hoc) ;
+- **avatars hors payloads** (UserOut = flag + version, route dédiée
+  `GET /users/{id}/avatar` accès-contrôlée) + **pagination de `/users`** ;
+- **/health qui vérifie la base** (503 si KO) + healthchecks compose backend/frontend ;
+- **X-Forwarded-For honoré uniquement derrière un proxy de confiance**
+  (`TRUSTED_PROXIES`, défaut : ranges privés) ;
+- **CI GitHub Actions** (compileall + i18n + ruff + pytest à chaque push/PR).
 
 ### Montée en charge du frontend
 
@@ -190,9 +263,23 @@ sur la même réplique. (Le backend, lui, est stateless : JWT + sessions en base
 
 ## Tests
 
+Le même gate que la CI (GitHub Actions, `.github/workflows/ci.yml`), jouable en local :
+
 ```bash
-cd backend && uv run pytest        # tests API (login, rôles, sessions, jobs) + worker
+make test           # tout : backend (pytest) + frontend (compile + i18n)
+make test-backend   # backend seulement (SQLite in-process, pas de Docker requis)
+make test-frontend  # compileall + check i18n (en/de/fr complets, zéro doublon)
+make check          # le gate CI exact (compileall + i18n + pytest)
 ```
+
+Couverture des tests backend (`backend/tests/`) : flux login/jobs/sessions, IdP OIDC,
+worker, **fail-fast secrets**, **rotation refresh + détection de rejeu**, **rate-limit
+login (429)**, **SSE (seq, ring buffer, replay Last-Event-ID, _resync)**, **avatars
+hors payloads + pagination /users**, **/health avec vérification DB**.
+
+Les tests tournent sur SQLite in-process (`INSECURE_DEV=1`) : rapides, sans service
+externe. Les chemins spécifiques Postgres (LISTEN/NOTIFY, séquence globale) se valident
+en conditions réelles : `make up` puis `docker compose logs backend | grep seq=`.
 
 ## Dépendances : versions maîtrisées et reproductibles
 

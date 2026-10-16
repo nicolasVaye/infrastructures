@@ -24,6 +24,31 @@ _FORMAT = '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s'
 logger = logging.getLogger(__name__)
 
 
+class _DrawerTeardownFilter(logging.Filter):
+    """Drop the drawer's JS-request timeouts at page teardown.
+
+    NiceGUI's Drawer widget asks the browser whether it is open on every
+    client connect (an AWAITED JavaScript call with a 1 s timeout). When the
+    page is torn down right then — F5, logout navigation, tab close — the
+    answer never arrives and NiceGUI logs a full ERROR traceback per
+    navigation burst. Pure teardown noise: nothing to act on. We only drop
+    records whose traceback goes through the drawer's own _request_value,
+    so genuine JavaScript errors still surface.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != 'nicegui' or record.exc_info is None:
+            return True
+        if 'did not respond' not in str(record.getMessage()):
+            return True
+        tb = record.exc_info[2]
+        while tb is not None:
+            if tb.tb_frame.f_code.co_filename.endswith('elements/drawer.py'):
+                return False
+            tb = tb.tb_next
+        return True
+
+
 def _read_persisted_level() -> str:
     try:
         level = _LEVEL_FILE.read_text(encoding='utf-8').strip().upper()
@@ -65,6 +90,11 @@ def setup_logging() -> None:
     console = logging.StreamHandler()
     console.setFormatter(formatter)
     console._app_handler = True
+
+    # Applied to the handlers (not a logger) so both sinks drop the noise.
+    noise = _DrawerTeardownFilter()
+    file_handler.addFilter(noise)
+    console.addFilter(noise)
 
     root.addHandler(file_handler)
     root.addHandler(console)

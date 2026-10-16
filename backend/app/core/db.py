@@ -18,6 +18,20 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(dt: datetime) -> datetime:
+    """Normalize a DB-loaded datetime to aware UTC.
+
+    Postgres (asyncpg) returns aware datetimes for ``DateTime(timezone=True)``
+    columns, but SQLite ignores the timezone flag and returns NAIVE ones —
+    so any Python-side comparison of a DB value against :func:`utcnow`
+    must go through here or it raises ``TypeError: can't compare offset-naive
+    and offset-aware datetimes`` on the SQLite dev/test path.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 class Base(DeclarativeBase):
     pass
 

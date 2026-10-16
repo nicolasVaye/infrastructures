@@ -39,6 +39,8 @@ def _add_global_css(shared: bool = False) -> None:
 # Configure application-wide rolling logging before anything else emits records
 setup_logging()
 
+logger = logging.getLogger(__name__)
+
 # Initialize the database and seed the default admin (admin/admin) on first run
 init_db()
 
@@ -228,6 +230,8 @@ from views import (
     pallets_content,
     packings_content,
     icons_content,
+    examples_content,
+    demo_content,
     settings_content,
     user_settings_content,
     users_content,
@@ -359,7 +363,9 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     var handle = get('.sidebar-collapse-handle');
     var drawer = get('.q-drawer--left');
     if (handle) {
-      handle.style.left = (w - 5) + 'px';
+      // The handle itself is anchored to the drawer by CSS (absolute,
+      // right: -5px): its position needs NO sync here — it follows the
+      // drawer through every phase, drag, animation or model restore.
       var icon = handle.querySelector('.sidebar-collapse-handle-icon');
       if (icon) { icon.textContent = (w >= WIDE) ? 'chevron_left' : 'chevron_right'; }
     }
@@ -384,24 +390,22 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     }
   }
 
-  // While the drawer animates (click-toggle), move the handle with its LIVE
-  // width each frame: without this the handle jumped to its target instantly
-  // while the drawer edge was still mid-flight — the handle visibly detached
-  // from the nav-bar edge for the whole transition (user-visible bug).
+  // While the drawer animates (click-toggle), keep the page container's
+  // padding glued to the drawer's LIVE width each frame: Quasar sizes it
+  // from the drawer MODEL, so our JS-driven target width must be tracked
+  // manually until the transition lands (the handle needs no tracking —
+  // CSS anchors it to the drawer edge).
   function followDrawer() {
     if (follower) { cancelAnimationFrame(follower); }
     function step() {
       var drawer = get('.q-drawer--left');
-      var handle = get('.sidebar-collapse-handle');
       var container = get('.q-page-container');
-      if (!drawer || !handle) { follower = 0; return; }
+      if (!drawer) { follower = 0; return; }
       var w = Math.round(drawer.getBoundingClientRect().width);
-      handle.style.left = (w - 5) + 'px';
       if (container) { container.style.paddingLeft = w + 'px'; }
       if (Math.abs(w - currentW) > 0.5) {
         follower = requestAnimationFrame(step);
       } else {
-        handle.style.left = (currentW - 5) + 'px';  // exact landing
         if (container) { container.style.paddingLeft = currentW + 'px'; }
         follower = 0;
       }
@@ -410,16 +414,34 @@ _SIDEBAR_SPLITTER_JS = '''<script>
   }
 
   // Initial sync: server-side rendering sets the drawer width but not the
-  // handle position, so reflect it once the drawer hits the DOM.
+  // body's sidebar-wide state (label visibility), so reflect both once the
+  // drawer hits the DOM. The handle needs nothing: CSS anchors it.
   var tries = 0;
   var initTimer = setInterval(function () {
     var drawer = get('.q-drawer--left');
-    var handle = get('.sidebar-collapse-handle');
-    if (drawer && handle) {
+    if (drawer) {
       currentW = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
-      handle.style.left = (currentW - 5) + 'px';
       document.body.classList.toggle('sidebar-wide', currentW >= WIDE);
       clearInterval(initTimer);
+      // Re-sync on any FOREIGN width change of the drawer: entering the
+      // tablet/phone breakpoint hides it, and coming back above the
+      // breakpoint Quasar re-renders it at the MODEL width — the labels
+      // and the page-container padding then no longer match. Dragging and
+      // the click-toggle animation are excluded (they drive the width
+      // themselves).
+      if (typeof ResizeObserver !== 'undefined') {
+        var ro = new ResizeObserver(function () {
+          if (dragging || follower) { return; }
+          var d = get('.q-drawer--left');
+          if (!d) { return; }
+          var w = Math.round(d.getBoundingClientRect().width);
+          if (!w || w === currentW) { return; }
+          // Adopt the restored width live and persist it so the model,
+          // the storage and the UI all agree again.
+          apply(Math.min(MAXW, Math.max(MINW, w)), true);
+        });
+        ro.observe(drawer);
+      }
     } else if (++tries > 150) { clearInterval(initTimer); }
   }, 200);
 
@@ -432,8 +454,6 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     startW = currentW || TOGGLE;  // never read a mid-animation rect here
     var drawer = get('.q-drawer--left');
     if (drawer) { drawer.style.transition = 'none'; }
-    var handle = get('.sidebar-collapse-handle');
-    if (handle) { handle.style.transition = 'none'; }
   }
 
   function moveDrag(x) {
@@ -448,15 +468,14 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     dragging = false;
     var drawer = get('.q-drawer--left');
     if (drawer) { drawer.style.transition = ''; }
-    var handle = get('.sidebar-collapse-handle');
-    if (handle) { handle.style.transition = ''; }
     var w;
     if (moved) {
       w = Math.round(Math.min(MAXW, Math.max(MINW, startW + x - startX)));
       apply(w, false);
     } else {
       // Simple click: toggle icon-only <-> standard width. The drawer then
-      // ANIMATES: let the rAF follower keep the handle glued to its edge.
+      // ANIMATES: the rAF follower keeps the page-container padding glued
+      // to the drawer's live width (the handle follows on its own).
       w = (startW < WIDE) ? TOGGLE : MINW;
       apply(w, false);
       followDrawer();
@@ -520,8 +539,54 @@ def with_base_layout(route_handler):
             from services import events_client
             events_client.install_event_listener()
 
+        # Identity propagation across tabs: app.storage.user is per-BROWSER,
+        # so a login or logout performed in ANOTHER tab swaps the identity
+        # under this page's feet. The already-built header/nav snapshot stays
+        # stale until F5 (wrong name in the account dropdown, admin links
+        # missing/present for the wrong role) — the user has no reason to
+        # guess a refresh is needed. Watch the storage fingerprint this page
+        # was BUILT with and reload when it no longer matches: the reload
+        # rebuilds header, sidebar and role-gated widgets consistently.
+        def _identity_fingerprint():
+            if not app.storage.user.get('authenticated', False):
+                return None
+            return (app.storage.user.get('user_id'),
+                    app.storage.user.get('role'))
+
+        app.storage.client['identity_seen'] = _identity_fingerprint()
+
+        def _watch_identity() -> None:
+            fp = _identity_fingerprint()
+            if fp != app.storage.client.get('identity_seen'):
+                app.storage.client['identity_seen'] = fp
+                logger.info('Identity changed from another tab — reloading page')
+                ui.run_javascript('window.location.reload()')
+
+        ui.timer(2.0, _watch_identity)
+
         with header.frame(title=appName, version=appVersion):
-            return route_handler(*args, **kwargs)
+            # Server-side page build time — the best proxy for the
+            # *perceived* display time of a NiceGUI page: the element tree
+            # pushed over the websocket is what the user waits for. Slow
+            # builds (N+1 REST calls, eager heavy tabs…) surface at WARNING
+            # so they stand out in the logs and can be triaged.
+            import time as _time
+            _t0 = _time.perf_counter()
+            try:
+                return route_handler(*args, **kwargs)
+            finally:
+                _dt_ms = (_time.perf_counter() - _t0) * 1000
+                # Session id prefix + username expose WHICH storage file
+                # drives this page — the key diagnostic when tabs of the
+                # same browser end up on different session cookies
+                # (identity swap vs independent sessions, see AGENTS.md).
+                _session = str(app.storage.browser.get('id') or '?')[:8]
+                _user = app.storage.user.get('username') or 'anonymous'
+                logging.getLogger('pages').log(
+                    logging.WARNING if _dt_ms > 1500 else logging.INFO,
+                    "Page '%s' built in %.0f ms (session=%s user=%s)",
+                    route_handler.__name__, _dt_ms, _session, _user,
+                )
     return wrapper
 
 # Page and sub-page routing
@@ -539,9 +604,12 @@ def root():
     '/packing' : packing,
     '/icons'      : icons,
     '/print-demo' : print_demo,
+    '/examples'   : examples,
     '/settings'   : settings,
     '/account'    : account,
     '/jobs'       : jobs_list,
+    **{f'/demo-{i}': (lambda i=i: _localized(demo_content.content, i)) for i in range(1, 9)},
+    '/demo-3/{branch}': demo_branch,
     })
 
 
@@ -580,6 +648,12 @@ def icons():
 
 def print_demo():
     _localized(print_demo_content.content)
+
+def examples():
+    _localized(examples_content.content)
+
+def demo_branch(branch: str):
+    _localized(demo_content.content, 3, branch)
 
 def settings():
     from models.enums import UserRole
@@ -649,13 +723,13 @@ def _get_storage_secret() -> str:
 # Entry point: uncomment exactly one target
 
 # 1) Development: auto-reload on file changes
+'''
 ui.run(root, storage_secret=_get_storage_secret(), title=appName, port=appPort,
        favicon='favicon.ico', reconnect_timeout=20)
 '''
 #2) Production — no auto-reload
 ui.run(root, host='0.0.0.0', storage_secret=_get_storage_secret(), title=appName, port=appPort,
         favicon='favicon.ico', reconnect_timeout=20, reload=False)
-'''
 
 '''
 #3) Production over HTTPS — no auto-reload + self-signed TLS certs (see certs/)

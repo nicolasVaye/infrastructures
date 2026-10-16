@@ -251,11 +251,11 @@ def content() -> None:
                                   'settings.federated_pw')
                     i18n.bind(ui.label(t('settings.federated_pw_desc')).classes(
                         'text-xs text-muted mt-1'), 'settings.federated_pw_desc')
-                with ui.row().classes('w-full justify-end mt-2'):
-                    i18n.bind(ui.button(t('settings.change_pw_provider'), icon='open_in_new',
-                              on_click=lambda: ui.navigate.to('/login'))
-                              .props('no-caps outline').classes('button button-outline'),
-                              'settings.change_pw_provider')
+                # with ui.row().classes('w-full justify-end mt-2'):
+                #     i18n.bind(ui.button(t('settings.change_pw_provider'), icon='open_in_new',
+                #               on_click=lambda: ui.navigate.to('/login'))
+                #               .props('no-caps outline').classes('button button-outline'),
+                #               'settings.change_pw_provider')
 
             else:
                 def _sync_button() -> None:

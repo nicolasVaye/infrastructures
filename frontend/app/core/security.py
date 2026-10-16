@@ -52,7 +52,8 @@ def current_user() -> 'User | None':
         # The avatar image is never stored in the session cookie (size!);
         # only 'has_avatar'/'avatar_version' are, and the image itself is
         # served by GET /avatar from the database.
-        avatar=None,
+        has_avatar=bool(app.storage.user.get('has_avatar', False)),
+        avatar_version=int(app.storage.user.get('avatar_version') or 0),
         language=app.storage.user.get('language', 'en'),
     )
 

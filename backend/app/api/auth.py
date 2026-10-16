@@ -15,7 +15,7 @@ from sqlalchemy import func, or_, select
 
 from app.core.config import get_settings
 from app.core.db import (AuditLogRecord, IdentityProviderRecord, RoleRecord,
-                         SessionRecord, UserRecord, utcnow)
+                         SessionRecord, UserRecord, as_utc, utcnow)
 from app.core.security import (_bearer, CurrentUser, DbSession,
                                burn_password_time, client_ip,
                                create_token_pair, decode_token,
@@ -294,7 +294,8 @@ async def refresh(body: dict, session: DbSession) -> TokenPair:
     sid = payload["sid"]
 
     record_ = await session.get(SessionRecord, sid)
-    if record_ is None or record_.revoked_at is not None or record_.expires_at <= utcnow():
+    if (record_ is None or record_.revoked_at is not None
+            or as_utc(record_.expires_at) <= utcnow()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session revoked or expired")
 
     presented_hash = token_hash(token)

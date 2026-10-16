@@ -38,11 +38,17 @@ async def test_health_degraded_when_database_down(monkeypatch, tmp_path):
     db._engine = None
     db._session_factory = None
     from app.main import app
+    import app.main as main_module
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         # Break the engine: any query now raises → /health must 503.
-        async def _boom():
+        # The endpoint resolves get_session_factory from app.main's globals
+        # at call time, so THAT is the binding to replace (not app.core.db).
+        # Sync on purpose: /health calls get_session_factory()() — a sync
+        # raiser fails the first call, an async one would only create an
+        # un-awaited coroutine (RuntimeWarning) then TypeError on the ().
+        def _boom():
             raise RuntimeError("database gone")
-        db.get_session_factory = _boom  # type: ignore[assignment]
+        monkeypatch.setattr(main_module, "get_session_factory", _boom)
         r = await c.get("/health")
         assert r.status_code == 503
         assert r.json()["database"] == "unreachable"

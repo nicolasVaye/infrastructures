@@ -28,6 +28,9 @@
   --accent:       #e4e4e7;
   --accent-fg:    #18181b;
 
+  /* Active nav pill: a light-blue tint of the indicator blue (#4F8CE8) */
+  --nav-active-bg: rgba(79, 140, 232, 0.13);
+
   --success:      #4caf50;
   --success-fg:   #fafafa;
   --success-light:#f0faf0;
@@ -509,14 +512,20 @@ body { font-size: var(--app-font-size) !important; }
   color: var(--fg) !important;
 }
 
-/* Vertical splitter handle on the sidebar's right separator: a slim fixed
-   tab (10 px) rounded on BOTH sides, centered on the drawer border. Its left
-   offset is synced from the splitter JS (left = width - 5). */
+/* Vertical splitter handle on the sidebar's right separator: a slim tab
+   (10 px) rounded on BOTH sides, centered on the drawer border. It is
+   ABSOLUTELY POSITIONED INSIDE the drawer (right: -5px, the positioned
+   ancestor is the drawer itself): the position follows every width phase
+   (drag, click-toggle animation, Quasar restoring the model width after a
+   tablet round-trip) as a consequence of the layout — no JS re-sync, no
+   drift. Out of flow, it neither scrolls with the links nor gets pushed
+   by them (its containing block sits outside the scroll area, so the
+   drawer's overflow never clips it either). */
 .sidebar-collapse-handle {
-  position: fixed;
+  position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  left: 233px;
+  right: -5px;
   width: 10px;
   height: 88px;
   display: flex;
@@ -528,10 +537,6 @@ body { font-size: var(--app-font-size) !important; }
   border-radius: 8px;
   color: var(--muted-fg);
   z-index: 3000;
-  /* No 'left' transition here: the splitter JS follows the drawer's live
-     width frame-by-frame (rAF) while the drawer animates, so the handle
-     stays glued to its edge. A CSS transition on 'left' made it lag behind
-     and visually detach from the nav-bar during the toggle animation. */
   transition: background var(--transition),
               color var(--transition), height var(--transition);
   user-select: none;
@@ -693,6 +698,62 @@ q-menu {
   transition: width 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
+/* Nav drawer: the WHOLE drawer content scrolls (Quasar's .q-drawer__content
+   is overflow: auto and spans the full drawer height), so the scrollbar runs
+   the entire nav-bar, flush with its edge. The App Settings hub is
+   position: sticky at the bottom of the scrolling flow: it never leaves the
+   visible area and can never overlap the links (it is in the flow — the old
+   absolutely-positioned hub sat on top of them on short viewports). */
+.q-drawer--left .q-drawer__content {
+  /* NiceGUI styles this div (it carries the .nicegui-drawer class) as a
+     flex column with align-items: flex-start and 1rem padding: our wrapper
+     then shrank to its content width — the links and the scrollbar never
+     spanned the drawer, whatever its size — and everything was inset from
+     the edges. Stretch it and drop the padding: the nav entries carry
+     their own spacing and the scrollbar hugs the border. */
+  align-items: stretch;
+  padding: 0;
+  gap: 0;
+  /* Slim design-integrated scrollbar, consistent across engines: thin
+     rounded thumb over a transparent track (Chrome via ::-webkit-scrollbar,
+     Firefox via scrollbar-width/scrollbar-color). */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.q-drawer--left .q-drawer__content::-webkit-scrollbar {
+  width: 6px;
+}
+.q-drawer--left .q-drawer__content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.q-drawer--left .q-drawer__content::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.q-drawer--left .q-drawer__content::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-fg);
+}
+.sidebar-nav-scroll {
+  display: flex;
+  flex-direction: column;
+  /* Flex-grow fills the drawer height when the links are short (no
+     percentage heights: they did not resolve through NiceGUI's flex
+     styling of the content div) and overflows past it when they are many. */
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+.sidebar-bottom {
+  position: sticky;
+  bottom: 0;
+  /* margin-top: auto pins the hub at the drawer bottom when the links
+     leave free space; position: sticky keeps it visible while scrolling
+     when they don't. */
+  margin-top: auto;
+  flex: 0 0 auto;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+}
+
 .sidebar-label {
   transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out !important;
   transform-origin: left center;
@@ -716,9 +777,27 @@ q-menu {
   min-width: auto !important;
 }
 
-/* Active sidebar nav link */
+/* Sidebar nav entries: ui.link renders a plain <a>, an INLINE box — the
+   w-full class (width: 100%) is silently ignored on inline elements, so each
+   entry only wrapped its content and neither the hover area nor the active
+   pill followed the drawer when the splitter resized it. Flex makes every
+   entry fill the drawer width; the label ellipsizes instead of overflowing. */
+.q-drawer--left .sidebar-nav-scroll a,
+.q-drawer--left .sidebar-bottom a {
+  display: flex;
+  width: 100%;
+}
+.q-drawer--left .sidebar-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+/* Active sidebar nav link: a full-width tinted pill around the WHOLE entry
+   plus the blue indicator on the left — a clearly visible selection, not
+   just a thin bar. */
 .nav-link-active {
-  background: var(--accent) !important;
+  background: var(--nav-active-bg) !important;
   border-radius: 2rem !important;
   position: relative !important;
 }
@@ -739,6 +818,33 @@ q-menu {
 .nav-link-active .q-icon,
 .nav-icon-active {
   color: var(--primary) !important;
+}
+.nav-link-active .sidebar-label {
+  color: var(--primary) !important;
+  font-weight: 600 !important;
+}
+
+/* Treeview branches under an expandable nav entry (add_nav_branch in
+   header.py): children hang on a connector line below their parent and
+   start closed ('closed' is toggled from Python on click). */
+.sidebar-nav-children {
+  margin: 0 0 4px 44px;
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+.sidebar-nav-children.closed {
+  display: none;
+}
+.sidebar-nav-children .sidebar-label {
+  font-size: 0.95rem !important;
+}
+/* The chevron glyph itself is swapped from Python (chevron_right when
+   closed, expand_more when open) — no CSS rotation, which Firefox rendered
+   inconsistently with the rest of the branch. */
+/* Icon-only sidebar: the branch labels are gone, the tree makes no sense */
+body:not(.sidebar-wide) .sidebar-nav-children,
+body:not(.sidebar-wide) .sidebar-nav-branch-chevron {
+  display: none !important;
 }
 
 .q-item__section {
@@ -1523,6 +1629,9 @@ body.body--dark {
 
   --accent:       #3f3f46;
   --accent-fg:    #e4e4e7;
+
+  /* Stronger blue tint so the active pill stays readable on dark panels */
+  --nav-active-bg: rgba(79, 140, 232, 0.30);
 
   --success-light:#12241a;
   --warning-light:#2a1d04;

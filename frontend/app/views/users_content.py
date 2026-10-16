@@ -12,6 +12,7 @@ from nicegui import app, ui
 
 from components.dialogs import confirm_dialog, info_dialog
 from components.notifications import notify
+from components.pager import pager
 from core.database import get_session
 from models.audit import AuditAction
 from models.enums import UserRole
@@ -19,11 +20,16 @@ from services.audit_service import record as audit_record
 from services.i18n import t
 from services.user_service import UserService
 from services.tz import get_app_timezone
+from shared.client.async_client import ApiError
 from views._common import activity_sparkline, safe_auto_refresh
 
 
 # The bootstrap admin is protected: it can never be deleted or disabled.
 _PROTECTED_USERNAME = 'admin'
+
+# Rows rendered per page (all users stay fetched client-side for the
+# online/activity cells; only the RENDERED slice is paginated).
+_PAGE_SIZE = 50
 
 # Icons are classic Material Icons (Quasar's bundled set). All three roles
 # seeded by the backend appear here (admin, operator, user).
@@ -65,25 +71,37 @@ def _users_tab(current_username: str) -> None:
     # the currently navigating user, online badges) no longer rebuild the
     # avatar <img> of every row, which made all avatars blink. The whole
     # row set is rebuilt only when a user is created or deleted.
-    state: dict = {'data': {}, 'order': [], 'rows': {}}
+    state: dict = {'data': {}, 'order': [], 'rows': {}, 'page': 1}
 
     def _fetch() -> None:
-        """Refresh state['data'] / state['order'] from the backend."""
-        with get_session() as session:
-            users = [
-                {
-                    'id': u.id,
-                    'username': u.username,
-                    'role': u.role.value,
-                    'is_active': u.is_active,
-                    'must_change_password': u.must_change_password,
-                    'auth_provider': u.auth_provider,
-                    'idp_name': u.idp_name,
-                    'has_avatar': u.has_avatar,
-                    'avatar_version': u.avatar_version,
-                }
-                for u in UserService(session).get_all_users()
-            ]
+        """Refresh state['data'] / state['order'] from the backend.
+
+        401/403 stop silently: 401 means the heartbeat already redirects
+        to /login; 403 means the browser's identity changed mid-session
+        (login as a lesser user from the same browser — see the /settings
+        role watcher) and this page is about to be closed anyway. Neither
+        must spam the logs as an SSE/timer "failure".
+        """
+        try:
+            with get_session() as session:
+                users = [
+                    {
+                        'id': u.id,
+                        'username': u.username,
+                        'role': u.role.value,
+                        'is_active': u.is_active,
+                        'must_change_password': u.must_change_password,
+                        'auth_provider': u.auth_provider,
+                        'idp_name': u.idp_name,
+                        'has_avatar': u.has_avatar,
+                        'avatar_version': u.avatar_version,
+                    }
+                    for u in UserService(session).get_all_users()
+                ]
+        except ApiError as exc:
+            if getattr(exc, 'status_code', None) in (401, 403):
+                return
+            raise
 
         # Connected users: usernames holding at least one active session
         # (GET /sessions — this tab is admin-only, same guard as the API).
@@ -303,18 +321,28 @@ def _users_tab(current_username: str) -> None:
                   lambda: _render_actions_cell(uid))
         return {'cells': cells, 'sigs': sigs}
 
+    def _visible_ids() -> list[int]:
+        """Ids of the CURRENT PAGE, clamped when users disappear."""
+        total = len(state['order'])
+        pages = max(1, -(-total // _PAGE_SIZE))
+        state['page'] = min(state['page'], pages)
+        start = (state['page'] - 1) * _PAGE_SIZE
+        return state['order'][start:start + _PAGE_SIZE]
+
     def _apply() -> None:
         """Re-render ONLY the cells whose data actually changed."""
         display_tz = get_app_timezone()
-        if state['order'] != list(state['rows'].keys()):
-            # A user was created or deleted: rebuild the rows container.
+        visible = _visible_ids()
+        if visible != list(state['rows'].keys()):
+            # A user was created or deleted (or the page changed): rebuild
+            # the rows container.
             rows.clear()
             state['rows'].clear()
             with rows:
-                for uid in state['order']:
+                for uid in visible:
                     state['rows'][uid] = _make_row(uid)
             return
-        for uid in state['order']:
+        for uid in visible:
             row = state['rows'][uid]
             new_sigs = {
                 'user': _sig_user(uid),
@@ -330,9 +358,15 @@ def _users_tab(current_username: str) -> None:
                     row['sigs'][name] = sig
                     row['cells'][name].refresh()
 
+    def _goto_page(p: int) -> None:
+        state['page'] = p
+        _apply()
+        pager_view.refresh()
+
     def _reload() -> None:
         _fetch()
         _apply()
+        pager_view.refresh()
 
     # Action handlers
     async def _reset(uid: int) -> None:
@@ -510,6 +544,11 @@ def _users_tab(current_username: str) -> None:
             ui.label(t('users.col.actions')).style('width: 180px;')
         rows = ui.column().classes('w-full gap-0')
 
+    @ui.refreshable
+    def pager_view() -> None:
+        pager(len(state['order']), state['page'], _PAGE_SIZE, _goto_page)
+
+    pager_view()
     _reload()
 
     # Live updates: two SSE-driven counters — 'sessions_refresh_counter'
