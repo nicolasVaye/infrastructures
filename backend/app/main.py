@@ -8,6 +8,7 @@ Workers:   python -m app.worker   (scale horizontally, any number of processes)
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -18,6 +19,17 @@ from app.core.config import get_settings
 from app.core.db import get_engine
 
 logger = logging.getLogger(__name__)
+
+# Root logging setup, mirroring app/worker/__init__.py: without it uvicorn
+# only configures its own loggers (access/error) and every application-level
+# INFO record — including the SSE observability of app/events.py
+# ("Listening on Postgres channel", "SSE subscriber #N connected",
+# "SSE keepalive #N sent", "SSE event seq=N fanned out") — is dropped by the
+# default WARNING root level, leaving the diagnostics protocol blind.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+)
 
 
 @asynccontextmanager

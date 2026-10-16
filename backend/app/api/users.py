@@ -8,17 +8,18 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import delete, func, select
 
 from app.core.db import RoleRecord, SessionRecord, UserRecord, utcnow
-from app.core.security import AdminUser, CurrentUser, DbSession, hash_password
+from app.core.security import (AdminUser, CurrentUser, DbSession,
+                               generate_initial_password, hash_password)
 from app.events import notify_event
 from app.services import record, revoke_session
 from shared.enums import AuditAction
-from shared.models import PasswordChange, ProfileUpdate, RoleOut, UserCreate, UserOut, UserUpdate
+from shared.models import (PasswordChange, ProfileUpdate, RoleOut, UserCreate,
+                           UserCreatedOut, UserOut, UserUpdate)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 router = APIRouter(tags=["users"])
 
-DEFAULT_USER_PASSWORD = "changeme"
 MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_LENGTH = 64
 _PROTECTED_USERNAME = "admin"
@@ -98,8 +99,8 @@ async def get_user(user_id: int, admin: AdminUser, session: DbSession) -> UserOu
     return _out(user)
 
 
-@router.post("/users", response_model=UserOut, status_code=201)
-async def create_user(body: UserCreate, admin: AdminUser, session: DbSession) -> UserOut:
+@router.post("/users", response_model=UserCreatedOut, status_code=201)
+async def create_user(body: UserCreate, admin: AdminUser, session: DbSession) -> UserCreatedOut:
     username = body.username.strip()
     if not username:
         raise HTTPException(400, "Username is required.")
@@ -110,7 +111,15 @@ async def create_user(body: UserCreate, admin: AdminUser, session: DbSession) ->
         raise HTTPException(409, f'User "{username}" already exists.')
 
     role = await _get_role(session, body.role.value)
-    password = body.password or DEFAULT_USER_PASSWORD
+    # No caller-provided password → generate a RANDOM one. A shared default
+    # ("changeme") let anyone take over fresh accounts before first login.
+    generated = None
+    if body.password:
+        _validate_password(body.password)  # same policy as /me/password
+        password = body.password
+    else:
+        generated = generate_initial_password()
+        password = generated
     user = UserRecord(
         username=username,
         password_hash=hash_password(password),
@@ -124,7 +133,12 @@ async def create_user(body: UserCreate, admin: AdminUser, session: DbSession) ->
     await session.flush()
     await record(session, AuditAction.USER_CREATED, user_id=admin.id,
                  username=admin.username, target=username)
-    return _out(user)
+    # Commit BEFORE returning (see reset_password): the caller may try the
+    # generated initial_password immediately.
+    await session.commit()
+    out = UserCreatedOut.model_validate(_out(user))
+    out.initial_password = generated
+    return out
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
@@ -196,8 +210,14 @@ async def delete_user(user_id: int, admin: AdminUser, session: DbSession) -> Non
                  username=admin.username, target=user.username)
 
 
-@router.post("/users/{user_id}/reset-password", status_code=204)
-async def reset_password(user_id: int, admin: AdminUser, session: DbSession) -> None:
+@router.post("/users/{user_id}/reset-password")
+async def reset_password(user_id: int, admin: AdminUser, session: DbSession) -> dict:
+    """Reset a user's password to a RANDOM value (change forced on next login).
+
+    The generated password is returned exactly once, for the admin to relay —
+    never a shared constant: a known default password meant anyone could
+    log into a reset account before its legitimate owner did.
+    """
     user = await session.get(UserRecord, user_id)
     if user is None:
         raise HTTPException(404, "User not found.")
@@ -207,10 +227,17 @@ async def reset_password(user_id: int, admin: AdminUser, session: DbSession) -> 
             f"User '{user.username}' is federated — their password is managed "
             "by their identity provider.",
         )
-    user.password_hash = hash_password(DEFAULT_USER_PASSWORD)
+    new_password = generate_initial_password()
+    user.password_hash = hash_password(new_password)
     user.must_change_password = True
     await record(session, AuditAction.PASSWORD_RESET, user_id=admin.id,
                  username=admin.username, target=user.username)
+    # Commit BEFORE returning: the dependency teardown commits only after
+    # the response is on the wire, and the client (or the admin) will try
+    # the new password immediately — without this the first login races
+    # the commit and fails (same class of bug as /auth/login).
+    await session.commit()
+    return {"password": new_password}
 
 
 # -- self-service (any authenticated user) -------------------------------------
@@ -267,3 +294,6 @@ async def change_password(body: PasswordChange, user: CurrentUser, session: DbSe
     user.password_hash = hash_password(body.new_password)
     user.must_change_password = False
     await record(session, AuditAction.PASSWORD_CHANGED, user_id=user.id, username=user.username)
+    # Commit BEFORE returning (see reset_password): a fast client that
+    # logs in with the new password immediately must not race the commit.
+    await session.commit()

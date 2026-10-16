@@ -35,25 +35,36 @@ Points clés :
   - Panneau UI : **App Settings → onglet General → carte "Realtime Diagnostics"** (badge statut SSE, âge des données, seq, chips backend vs client, journal scrollable).
   - Client stocke son état dans `app.storage.user['sse_status']` : `{connected, last_error, last_seq, last_chunk_ts, events, connects}`.
 
-## 3. 🐛 BUG EN COURS (priorité absolue)
+## 3. 🐛 BUG SSE (CAUSE TROUVÉE, FIX APPLIQUÉ après v7.45)
 
-**Symptôme (observé en v7.44, à retester en v7.45)** : le flux SSE s'ouvre, la première trame (`retry: 5000\n: connected`) arrive, puis **plus rien** :
-- aucun keepalive 15 s reçu côté client ;
-- aucun événement (un login OIDC qui émet `sessions_changed` via pg_notify n'est jamais reçu, seq reste 0) ;
-- le read-timeout httpx 45 s ne se déclenche **jamais** (une seule connexion, aucun retry) ;
-- panneau : "connected, last data received 104s ago (seq 0)".
+**Symptôme (v7.44/v7.45)** : le flux SSE s'ouvre, la première trame (`retry: 5000\n: connected`) arrive, puis plus rien : aucun keepalive, aucun événement, le read-timeout httpx 45 s ne se déclenche jamais (une seule connexion, aucun retry), panneau figé sur "connected, last data received Xs ago (seq 0)".
 
-**Interprétation** : la connexion est un zombie — ouverte mais affamée. La cause exacte (backend fanout ? transport docker/proxy ? httpx ?) n'est PAS déterminée. La v7.45 a ajouté watchdog + observabilité pour la localiser.
+**Cause racine (prouvée dans la source NiceGUI 3.18.0, `client.py` `handle_disconnect`)** :
+`install_event_listener()` enregistrait `app.on_disconnect(lambda: task.cancel())`
+— un hook **global**. NiceGUI exécute TOUS les `app._disconnect_handlers` à la
+déconnexion de **n'importe quel** client (autre onglet, autre navigateur, autre
+utilisateur, ou drop websocket transient qui se reconnecte quelques secondes plus
+tard pendant le délai de grâce de 20 s). Chaque disconnect étranger annulait donc
+la tâche SSE de cet onglet : `CancelledError` → la tâche meurt en silence → état
+gelé `connected: True` (le watchdog et le read-timeout ne peuvent plus tirer : la
+tâche n'attend plus rien), `connects` reste à 1, aucune reconnexion. Le backend
+était sain tout du long (keepalives continués, cf. compteurs v7.45).
 
-**Protocole de diagnostic (dans l'ordre) — exécutez-le AVANT de proposer un fix :**
+**Fix** (`frontend/app/services/events_client.py`, `install_event_listener`) :
+- hooks **par client** (`context.client.on_disconnect/on_connect`) au lieu du hook global ;
+- les handlers agissent sur la tâche COURANTE lue dans `app.storage.client['events_task']` (jamais une référence capturée) ;
+- `_rearm_stream` en `client.on_connect` redémarre la tâche si elle est morte : un drop transient qui se reconnecte (grâce NiceGUI) ne laisse plus l'onglet sans events, car le page builder ne se rejoue pas à la reconnexion et le garde `events_installed` empêchait toute réinstallation ;
+- log INFO `Event stream task cancelled (last_seq=N)` sur annulation pour rendre le phénomène visible dans les logs.
 
-1. **Le backend produit-il ?** `docker compose logs -f backend` pendant 60 s : chercher `SSE keepalive #N sent` et, après un login, `SSE event seq=N fanned out`. Si oui → backend sain.
-2. **Le flux sort-il du conteneur ?** `curl -N -H "Authorization: Bearer <TOKEN>" http://localhost:8000/events` : les keepalives doivent apparaître toutes les 15 s. Sinon → problème uvicorn/transport.
-3. **Le frontend reçoit-il ?** Ouvrir l'app, regarder le panneau Realtime Diagnostics : chips "Keepalives envoyés" (backend) vs "Événements reçus (ce navigateur)" et l'âge des données. Si backend compte et client non → coupure entre backend et client httpx.
-4. **Le watchdog se déclenche-t-il ?** Logs frontend (`docker compose logs -f frontend`) : `SSE watchdog fired (no chunk in 25s)`. Si oui mais que curl (étape 2) reçoit les keepalives → le problème est côté client httpx (buffering ? itération aiter_bytes ?) et non le transport.
-5. Comparer `GET /system/sse-stats` (subscribers ≠ 0 ? keepalives qui montent ?) avec `sse_status` client.
+**Vérification post-fix (docker compose)** : les compteurs `keepalives` de
+`GET /system/sse-stats` et `connects`/`last_chunk_ts` du panneau Realtime
+Diagnostics doivent avancer ensemble ; ouvrir/fermer un second onglet ne doit
+plus figer le flux du premier ; un événement (login OIDC) doit arriver en seq > 0.
 
-**Pistes non encore explorées** : buffering de réponse dans un proxy/nginx éventuel devant le backend ; comportement d'`aiter_bytes` avec uvicorn ; MTU/docker network ; interaction avec le heartbeat/token refresh qui réécrit `app.storage.user`.
+**Note résiduelle** : l'entrée `ui.run` active dans `frontend/app/main.py` est la
+variante dev `reload=True` (les variantes prod sont en commentaire) — le
+conteneur frontend tourne donc avec l'auto-reloader. Sans lien direct avec le
+bug SSE, mais à corriger pour un déploiement propre (variante 2, `reload=False`).
 
 ## 4. Conventions du projet
 
@@ -66,8 +77,17 @@ Points clés :
 - **Timeouts/constants SSE** : `RECONNECT_DELAY=2.0`, `WATCHDOG=25.0` (client) ; keepalive 15 s, ring 200, queue maxsize 256 (backend). Ne pas modifier sans comprendre le replay.
 - **Timezone** : timestamps stockés UTC, rendus via `frontend/app/services/tz.py` (`format_local()`), réglage admin clé `app_timezone` (table `app_settings`).
 - **Style UI** : classes CSS custom (`card`, `badge badge-success|warning|danger|info|default`, `button button-primary|secondary|ghost`, `field-label`, `text-muted`), inline styles pour les dimensions. Pas de Tailwind.
-- **NiceGUI** : les tâches de fond n'ont pas de contexte page → ne jamais toucher `app.storage` depuis une tâche ; passer par une queue + `ui.timer` (pattern `_drain()`).
-- **Service worker / cache** : si un fichier CSS est modifié, bumper la version cache dans `frontend/app/assets/pwa/sw.js` (actuel : `nicestack-v7.39.1`).
+- **NiceGUI** : les tâches de fond n'ont pas de contexte page → ne jamais toucher `app.storage` depuis une tâche ; passer par une queue + `ui.timer` (pattern `_drain()`). **Hooks de cycle de vie : TOUJOURS `context.client.on_connect/on_disconnect` (par client), jamais `app.on_disconnect` (global : se déclenche pour N'IMPORTE QUEL client qui se déconnecte et tuait la tâche SSE de chaque onglet — cause du bug SSE v7.44/45)**. **Refresh de tables : refreshable PAR CELLULE + signature par cellule (pattern `_users_tab` / `sessions_content`) — un refresh par ligne suffit à faire clignoter l'avatar à chaque heartbeat (last_activity bouge toutes les 15 s)**. **Ordre de rendu STABLE : `GET /sessions` est trié par `last_activity DESC` (brouillé par chaque heartbeat) — trier par une clé stable (`created_at`) sinon la table se rebuild entièrement à chaque poll.**
+- **Service worker / cache** : si un fichier CSS est modifié, bumper la version cache dans `frontend/app/assets/pwa/sw.js` (actuel : `nicestack-v7.46.0`).
+- **Activité** : `POST /activity` attribue chaque navigation à la session JWT (`sid`, colonne `activity_events.session_id`). `GET /activity/users` = cumul PAR UTILISATEUR (Chrome+Firefox fusionnés, onglet Users) ; `GET /activity/sessions` = par SESSION (onglet Sessions, un graphe par navigateur). Sparkline partagée : `views/_common.activity_sparkline()`.
+- **Logo / icônes** : les PNG statiques de `assets/icons` sont SUPPRIMÉS. Le backend génère toutes les icônes (ICO + PNG 192/512/maskable/apple-touch via Pillow) au `PUT /app/logo` et les sert par `GET /app/logo/icons/{name}` ; le frontend les expose en `/icon-*.png`, `/apple-touch-icon.png` avec fallback `logo.svg`. Le proxy frontend (`core/backend_assets.py`) cache 60 s (tue le spam 404 « pas de logo ») et est invalidé par la page settings après upload. Les SVG uploadés ne sont pas rasterisés (fallback SVG). **Propagation temps réel : `PUT/DELETE /app/logo` émet `app_settings_changed` (setting=logo, version) ; le frontend bump `logo_version` (le timer du header re-rend le logo en ≤2 s) et réécrit les `<link rel=icon>` avec `?v=` (les navigateurs ne rechargent JAMAIS un favicon spontanément, même avec no-cache).**
+- **Splitter sidebar** : la poignée est `position:fixed` synchronisée en JS (`left = drawer.width - 5`). Pendant l'animation du toggle, un follower rAF suit la largeur réelle du drawer frame par frame — **ne pas remettre de `transition` CSS sur `left` de `.sidebar-collapse-handle`** (lag → désolidarisation) et **ne jamais lire `getBoundingClientRect().width` comme largeur de départ d'un drag** (valeur transitoire en cours d'animation) : utiliser l'état `currentW` du script. **Le conteneur des pages (`.q-page-container`) porte un `padding-left` piloté par le MODÈLE Quasar : toute largeur de drawer appliquée en JS doit AUSSI mettre à jour ce padding, sinon le contenu des sub-pages ne suit pas** (le follower rAF s'en charge pendant l'animation, `apply()` pour le drag). **PAS de `!important` sur la transition `.q-drawer`** : le script la désactive inline (`transition: none`) pendant le drag — avec `!important` le drawer continuait d'easer vers le curseur pendant que la poignée le suivait exactement (décalage visible sur tout le drag).
+- **Rafraîchissements SSE = signaux, pas des données** : un event SSE bump un compteur dans `app.storage.user` (`sessions_refresh_counter`, `users_refresh_counter`, `jobs_refresh_counter`…) ; un `ui.timer` de l'onglet voit le compteur bouger, REFETCH en REST et re-rend par diff de signatures. Un type de changement sans compteur écouté (ex: `user_updated` avant v7.46.3) n'est visible qu'au poll de 15 s — ajouter le compteur au handler ET l'écouter dans l'onglet.
+- **Timeout d'inactivité du navigateur** : l'AuthMiddleware ne voit que les requêtes HTTP ; une SPA NiceGUI n'en émet plus après le chargement (tout passe par websocket). `last_activity` est donc rafraîchi par le **heartbeat** (`api_client.heartbeat`, timer 15 s en contexte page) — sans ça, 30 min d'usage SPA sans rechargement ⇒ le prochain F5 efface le storage et renvoie /login (symptôme vu « au hasard des navigateurs », pas lié au navigateur). Le backend, lui, considère une session connectée pendant 3 min après son dernier heartbeat (`heartbeat_ttl_seconds=180`). **Diagnostic « renvoyé sur /login »** : le middleware loggue chaque redirection (`Auth redirect: ... session_cookie=ABSENT/present`) — cookie ABSENT = politique/quirk du navigateur ; cookie present = le cookie a été REMPLACÉ par un id de session vide.
+- **Rotation du cookie de session (bug Epiphany/WebKitGTK, v7.46.4)** : les sondes du navigateur (favicon, manifest, icônes, sw.js) partent SANS cookie dans WebKitGTK ; nos routes custom (`/logo`, `/favicon.ico`, `/manifest.json`, `/icon-*`, `/apple-touch-icon`, pas les statiques `/assets/`) mintent alors un id de session VIDE dont le Set-Cookie **écrase le vrai cookie** → le prochain F5 tombe sur /login bien que la session backend vive. Fix : `CookieRotationGuard` (frontend core/security.py), middleware OUTERMOST qui strip le Set-Cookie de ces routes — installé via `app.on_startup` avec le trick `app.middleware_stack = None` (Starlette refuse add_middleware après le premier lifespan). Ne pas ajouter de routes publiques custom sans les ajouter à `_COOKIE_SAFE_PATHS/PREFIXES`.
+- **Sessions zombies** : un navigateur fermé sans logout laisse une session non révoquée jusqu'au job `maintenance.cleanup_sessions`. `GET /sessions?include_inactive=true` (admin) les retourne avec `active=false` ; l'onglet Sessions a un switch « sessions inactives » (rendu grisé + badge Offline) et une recherche par nom d'utilisateur (les chips par utilisateur ne s'affichent que si ≤ 8 utilisateurs — au-delà, seule la recherche est scalable).
+- **Sécurité (v7.47)** : anti brute-force sur `POST /auth/login` (10 échecs/15 min par IP OU username, comptés dans l'audit `login_failed` → multi-répliques ; **le commit des `login_failed` AVANT le raise est vital** — la dépendance DbSession rollback sur HTTPException, sans commit explicite l'échec disparaissait de l'audit ET du compteur). Refresh tokens **tournants** : hash du dernier refresh stocké sur `sessions.refresh_token_hash` ; un rejeu révoque toute la session (audit `refresh_reused`). Mots de passe initiaux/reset **aléatoires par compte** (`generate_initial_password`, plus de constante partagée) : la réponse de `POST /users` et `/users/{id}/reset-password` porte le mot de passe à afficher une fois. **Toute écriture de mot de passe doit committer avant de retourner** (le teardown de la dépendance commit après l'envoi de la réponse : un client qui se logue immédiatement perd la course — bug réel observé). `validate_runtime_secrets()` (bootstrap) refuse les JWT_SECRET faibles (< 32, défauts connus) sauf `INSECURE_DEV=1` (fixtures de test). Port API publié sur `127.0.0.1` uniquement. CSP : pas de header (NiceGUI ne supporte pas les nonces — voir README §Sécurité) ; TLS inter-services à faire au scale-out. Scale frontend > 1 réplique : `NICEGUI_REDIS_URL` + sticky sessions obligatoires (storages NiceGUI = fichiers locaux par défaut).
+- **Service worker** : le head appelle `reg.update()` à chaque chargement pour que le nouveau `CACHE` soit repris dès le premier reload (sinon les navigateurs ne re-valident sw.js que toutes les ~24 h et les users gardent l'ancien CSS/JS après un déploiement).
 
 ## 5. Déploiement & commandes utiles
 

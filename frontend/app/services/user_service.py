@@ -23,8 +23,6 @@ def _is_valid_email(email: str) -> bool:
     return bool(_EMAIL_RE.match(email))
 
 
-DEFAULT_USER_PASSWORD = 'changeme'
-
 MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_LENGTH = 64
 
@@ -117,17 +115,18 @@ class UserService:
         username: str,
         *,
         role: UserRole = UserRole.USER,
-        password: str | None = None,
         must_change_password: bool = True,
-    ) -> User:
+    ) -> tuple:
+        """Create a user; returns (User, initial_password).
+
+        The password is generated server-side (random, one-time) and shown
+        to the admin exactly once — never a shared default constant.
+        """
         username = username.strip()
         if not username:
             raise ValueError('Username is required.')
-        if password is None:
-            password = DEFAULT_USER_PASSWORD
         payload = {
             'username': username,
-            'password': password,
             'role': role.value,
             'must_change_password': must_change_password,
         }
@@ -136,7 +135,7 @@ class UserService:
         except ApiError as exc:
             # Surface backend validation as ValueError like the template did
             raise ValueError(str(exc.detail)) from exc
-        return _json_to_user(data)
+        return _json_to_user(data), (data or {}).get('initial_password')
 
     def set_role(self, user_id: int, role: UserRole) -> None:
         try:
@@ -150,9 +149,11 @@ class UserService:
         except ApiError as exc:
             raise ValueError(str(exc.detail)) from exc
 
-    def reset_password(self, user_id: int) -> None:
+    def reset_password(self, user_id: int) -> str | None:
+        """Reset via the backend; returns the one-time random password."""
         try:
-            self.session.post(f'/users/{user_id}/reset-password')
+            out = self.session.post(f'/users/{user_id}/reset-password') or {}
+            return out.get('password')
         except ApiError as exc:
             raise ValueError(str(exc.detail)) from exc
 

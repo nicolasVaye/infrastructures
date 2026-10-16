@@ -83,7 +83,12 @@ async def oidc_callback(request: Request, code: str = '', state: str = '',
             'language': user['language'],
             'email': user.get('email'),
             'display_name': user.get('display_name'),
-            'avatar': user.get('avatar'),
+            # Never store the avatar image in the session storage — only the
+            # flag + version counter (same contract as the local login), so
+            # the header renders GET /avatar?v=N instead of a generic
+            # account icon until the first heartbeat digest lands.
+            'has_avatar': bool(user.get('avatar')),
+            'avatar_version': 1,
             'login_at': now_ts,
             'last_activity': now_ts,
         })

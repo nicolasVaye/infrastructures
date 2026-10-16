@@ -46,6 +46,21 @@ init_db()
 app.add_middleware(security.AuthMiddleware)
 app.add_middleware(security.SecurityHeadersMiddleware)
 
+# CookieRotationGuard must sit OUTERMOST (outside NiceGUI's session
+# middleware, which appends Set-Cookie to every response it sees) — it is
+# registered on startup, AFTER ui.run() has added the session middlewares.
+# Starlette refuses add_middleware once the stack is built (first lifespan
+# call), so invalidate it first: the NEXT request rebuilds the chain with
+# the guard outermost, able to strip Set-Cookie from session-less public
+# routes. See the class docstring for why this matters (WebKitGTK favicon
+# probes rotated the session cookie → F5 logout in Epiphany).
+def _install_cookie_guard() -> None:
+    app.middleware_stack = None
+    app.add_middleware(security.CookieRotationGuard)
+
+
+app.on_startup(_install_cookie_guard)
+
 # Health check endpoint: bypasses auth middleware, always returns 200
 @app.get('/health')
 async def health() -> Response:
@@ -107,31 +122,17 @@ async def avatar() -> Response:
 # Application logo, straight from the backend's app_settings table (uploaded
 # by the admin on the App Settings page). Public and unauthenticated: the
 # browser needs it for the favicon and the login page BEFORE any sign-in.
-# Falls back to the bundled asset when no custom logo is configured.
+# Falls back to the bundled asset when no custom logo is configured; the
+# process-level TTL cache (core.backend_assets) keeps the 404 "no logo"
+# misses out of the backend logs — one probe per minute instead of one per
+# page load — and is invalidated by the settings page right after an upload.
 _LOGO_FALLBACK = Path(__file__).parent / 'assets' / 'images' / 'logo.svg'
-_FAVICON_FALLBACK = Path(__file__).parent / 'assets' / 'icons' / 'icon-192.png'
 
 
 def _backend_logo(path: str) -> tuple[bytes, str] | None:
     """Fetch a logo payload from the backend (unauthenticated, public route)."""
-    import base64 as _b64
-
-    import httpx
-    from core.database import BACKEND_URL
-
-    try:
-        r = httpx.get(f'{BACKEND_URL}{path}', timeout=5.0)
-    except Exception:  # noqa: BLE001 — backend down: use the bundled asset
-        return None
-    if r.status_code != 200:
-        return None
-    try:
-        body = r.json()
-        raw = _b64.b64decode(body['data'])
-        mime = body.get('mime') or 'image/png'
-    except Exception:  # noqa: BLE001 — malformed payload
-        return None
-    return raw, mime
+    from core.backend_assets import backend_asset
+    return backend_asset(path)
 
 
 @app.get('/logo')
@@ -148,14 +149,52 @@ async def logo() -> Response:
 @app.get('/favicon.ico')
 async def favicon() -> Response:
     """Serve the tab icon: the admin-uploaded logo (ICO generated server-side),
-    falling back to the bundled PWA icon."""
+    falling back to the bundled SVG logo."""
     fetched = _backend_logo('/app/logo.ico')
     if fetched is not None:
         raw, _mime = fetched
         return Response(content=raw, media_type='image/x-icon',
                         headers={'Cache-Control': 'no-cache'})
-    return FileResponse(_FAVICON_FALLBACK, media_type='image/png',
+    return FileResponse(_LOGO_FALLBACK, media_type='image/svg+xml',
                         headers={'Cache-Control': 'no-cache'})
+
+
+# PWA / apple icons, regenerated server-side from the uploaded logo (see
+# backend GET /app/logo/icons/{name}). The old static PNGs under
+# assets/icons were deleted: they went stale as soon as the admin uploaded a
+# new logo. When no PNG exists (SVG logo, or none configured) the bundled
+# logo.svg is served instead — browsers accept SVG icons everywhere except
+# the apple-touch-icon, which iOS then simply ignores.
+# FileResponse extends Response, so the annotation stays Response (a
+# Response | FileResponse union is not a valid Pydantic response model).
+def _serve_icon(name: str) -> Response:
+    fetched = _backend_logo(f'/app/logo/icons/{name}')
+    if fetched is not None:
+        raw, _mime = fetched
+        return Response(content=raw, media_type='image/png',
+                        headers={'Cache-Control': 'no-cache'})
+    return FileResponse(_LOGO_FALLBACK, media_type='image/svg+xml',
+                        headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/icon-192.png')
+async def icon_192() -> Response:
+    return _serve_icon('icon-192.png')
+
+
+@app.get('/icon-512.png')
+async def icon_512() -> Response:
+    return _serve_icon('icon-512.png')
+
+
+@app.get('/icon-maskable-512.png')
+async def icon_maskable_512() -> Response:
+    return _serve_icon('icon-maskable-512.png')
+
+
+@app.get('/apple-touch-icon.png')
+async def apple_touch_icon() -> Response:
+    return _serve_icon('apple-touch-icon.png')
 
 from views import (
     dashboard_content,
@@ -198,6 +237,18 @@ _SW_PATH = Path(__file__).parent / 'assets' / 'pwa' / 'sw.js'
 
 @app.get('/manifest.json')
 async def pwa_manifest() -> Response:
+    # Icons come from the logo upload (backend-generated PNGs). When the
+    # logo is an SVG — or none is configured — no PNG exists and the SVG
+    # itself is the icon (served by the /icon-*.png routes).
+    fetched = _backend_logo('/app/logo/icons/icon-192.png')
+    if fetched is not None:
+        icons = [
+            {'src': '/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
+            {'src': '/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
+            {'src': '/icon-maskable-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
+        ]
+    else:
+        icons = [{'src': '/logo', 'sizes': 'any', 'type': 'image/svg+xml', 'purpose': 'any'}]
     manifest = {
         'name': appName,
         'short_name': appName,
@@ -208,11 +259,7 @@ async def pwa_manifest() -> Response:
         'orientation': 'any',
         'background_color': '#ffffff',
         'theme_color': '#18181b',
-        'icons': [
-            {'src': '/assets/icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
-            {'src': '/assets/icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
-            {'src': '/assets/icons/icon-maskable-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
-        ],
+        'icons': icons,
     }
     return Response(content=json.dumps(manifest), media_type='application/manifest+json')
 
@@ -235,11 +282,16 @@ _PWA_HEAD = f'''<link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="{appName}">
-<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script>
 if ('serviceWorker' in navigator) {{
   window.addEventListener('load', function () {{
-    navigator.serviceWorker.register('/sw.js').catch(function (e) {{ console.error('SW registration failed', e); }});
+    navigator.serviceWorker.register('/sw.js').then(function (reg) {{
+      // Check for an updated worker on EVERY load: without this, browsers
+      // only re-fetch sw.js every ~24h and users keep a stale CSS/JS cache
+      // after a deploy ("the fix changed nothing" although it shipped).
+      reg.update().catch(function () {{}});
+    }}).catch(function (e) {{ console.error('SW registration failed', e); }});
   }});
 }}
 </script>'''
@@ -270,9 +322,17 @@ _SIDEBAR_SPLITTER_JS = '''<script>
 (function () {
   var MINW = 100, MAXW = 400, TOGGLE = 240, WIDE = 180;
 
+  // Last width APPLIED to the drawer (its CSS target). getBoundingClientRect
+  // must never feed a new gesture: mid-animation it returns a transient
+  // value, which made the handle jump and drift away from the drawer edge.
+  var currentW = 0;
+  // rAF follower id while the drawer's CSS transition runs (click-toggle).
+  var follower = 0;
+
   function get(name) { return document.querySelector(name); }
 
   function apply(w, persist) {
+    currentW = w;
     var handle = get('.sidebar-collapse-handle');
     var drawer = get('.q-drawer--left');
     if (handle) {
@@ -281,6 +341,11 @@ _SIDEBAR_SPLITTER_JS = '''<script>
       if (icon) { icon.textContent = (w >= WIDE) ? 'chevron_left' : 'chevron_right'; }
     }
     if (drawer) { drawer.style.width = w + 'px'; }
+    // Quasar sizes the page container from the DRAWER MODEL width; our JS
+    // resize diverges from it, so the padding must follow manually —
+    // without this the sub-pages never gained/lost space on resize.
+    var container = get('.q-page-container');
+    if (container) { container.style.paddingLeft = w + 'px'; }
     var wide = w >= WIDE;
     document.querySelectorAll('.sidebar-label').forEach(function (l) {
       l.classList.toggle('expanded', wide);
@@ -296,6 +361,31 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     }
   }
 
+  // While the drawer animates (click-toggle), move the handle with its LIVE
+  // width each frame: without this the handle jumped to its target instantly
+  // while the drawer edge was still mid-flight — the handle visibly detached
+  // from the nav-bar edge for the whole transition (user-visible bug).
+  function followDrawer() {
+    if (follower) { cancelAnimationFrame(follower); }
+    function step() {
+      var drawer = get('.q-drawer--left');
+      var handle = get('.sidebar-collapse-handle');
+      var container = get('.q-page-container');
+      if (!drawer || !handle) { follower = 0; return; }
+      var w = Math.round(drawer.getBoundingClientRect().width);
+      handle.style.left = (w - 5) + 'px';
+      if (container) { container.style.paddingLeft = w + 'px'; }
+      if (Math.abs(w - currentW) > 0.5) {
+        follower = requestAnimationFrame(step);
+      } else {
+        handle.style.left = (currentW - 5) + 'px';  // exact landing
+        if (container) { container.style.paddingLeft = currentW + 'px'; }
+        follower = 0;
+      }
+    }
+    follower = requestAnimationFrame(step);
+  }
+
   // Initial sync: server-side rendering sets the drawer width but not the
   // handle position, so reflect it once the drawer hits the DOM.
   var tries = 0;
@@ -303,9 +393,9 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     var drawer = get('.q-drawer--left');
     var handle = get('.sidebar-collapse-handle');
     if (drawer && handle) {
-      var w = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
-      handle.style.left = (w - 5) + 'px';
-      document.body.classList.toggle('sidebar-wide', w >= WIDE);
+      currentW = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
+      handle.style.left = (currentW - 5) + 'px';
+      document.body.classList.toggle('sidebar-wide', currentW >= WIDE);
       clearInterval(initTimer);
     } else if (++tries > 150) { clearInterval(initTimer); }
   }, 200);
@@ -313,12 +403,12 @@ _SIDEBAR_SPLITTER_JS = '''<script>
   var dragging = false, moved = false, startX = 0, startW = TOGGLE;
 
   function beginDrag(x) {
-    var drawer = get('.q-drawer--left');
-    if (!drawer) { return; }
+    if (follower) { cancelAnimationFrame(follower); follower = 0; }
     dragging = true; moved = false;
     startX = x;
-    startW = Math.round(drawer.getBoundingClientRect().width) || TOGGLE;
-    drawer.style.transition = 'none';
+    startW = currentW || TOGGLE;  // never read a mid-animation rect here
+    var drawer = get('.q-drawer--left');
+    if (drawer) { drawer.style.transition = 'none'; }
     var handle = get('.sidebar-collapse-handle');
     if (handle) { handle.style.transition = 'none'; }
   }
@@ -340,10 +430,13 @@ _SIDEBAR_SPLITTER_JS = '''<script>
     var w;
     if (moved) {
       w = Math.round(Math.min(MAXW, Math.max(MINW, startW + x - startX)));
+      apply(w, false);
     } else {
-      // Simple click: toggle icon-only <-> standard width.
+      // Simple click: toggle icon-only <-> standard width. The drawer then
+      // ANIMATES: let the rAF follower keep the handle glued to its edge.
       w = (startW < WIDE) ? TOGGLE : MINW;
       apply(w, false);
+      followDrawer();
     }
     fetch('/sidebar-width', {
       method: 'POST',

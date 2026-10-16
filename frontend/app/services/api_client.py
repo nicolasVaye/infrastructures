@@ -170,7 +170,17 @@ async def heartbeat() -> None:
     a simple expiry refreshes silently, but if the session was *revoked*
     (logout or admin kick from another tab), refresh fails too and every
     remaining open tab is redirected to the login page.
+
+    It ALSO refreshes the browser session's ``last_activity``: the
+    AuthMiddleware's idle timeout only sees HTTP requests, and a NiceGUI
+    SPA makes none after page load (everything goes over the websocket) —
+    without this, a user browsing for IDLE_TIMEOUT (30 min) without a page
+    reload was logged out on the very next F5 although their tab was
+    demonstrably alive (observed with Epiphany; affects every browser).
     """
+    import time
+    if app.storage.user.get('authenticated', False):
+        app.storage.user['last_activity'] = time.time()
     access = app.storage.user.get('access_token')
     refresh_token = app.storage.user.get('refresh_token')
     if not access and not refresh_token:

@@ -113,6 +113,10 @@ class SessionRecord(Base):
     last_activity: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Refresh-token rotation anchor: hash of the LATEST refresh token issued
+    # for this session. A presented token that no longer matches is a replay
+    # (see /auth/refresh) — the session is then revoked as compromised.
+    refresh_token_hash: Mapped[str | None] = mapped_column(String(64))
 
     user: Mapped["UserRecord"] = relationship(back_populates="sessions", lazy="joined")
 
@@ -208,6 +212,11 @@ class ActivityRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    # Which browser/client emitted the navigation (JWT 'sid'): lets
+    # GET /activity/sessions split a user's activity per session (Chrome
+    # vs Firefox vs automation client). Kept as a plain column, not a FK —
+    # sessions are purged after 7 days while activity is trimmed after 48h.
+    session_id: Mapped[str | None] = mapped_column(String(36), index=True)
     path: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
 

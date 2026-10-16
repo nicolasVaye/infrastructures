@@ -34,6 +34,23 @@ def hash_password(password: str) -> str:
     return f'pbkdf2_sha256${_PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}'
 
 
+def token_hash(token: str) -> str:
+    """Stable one-way hash of a token, for replay-detection anchors."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+# Random initial passwords (user creation / admin reset): unambiguous
+# alphabet, shown once to the admin, change forced on first login.
+_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+
+
+def generate_initial_password(length: int = 12) -> str:
+    """Random per-account password — NEVER a shared constant: a known shared
+    default let anyone take over a reset account before its first login."""
+    import secrets  # noqa: PLC0415  stdlib, kept local like os.urandom usage
+    return ''.join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(length))
+
+
 def verify_password(password: str, encoded: str) -> bool:
     try:
         algorithm, iterations, salt_hex, hash_hex = encoded.split('$')
@@ -126,6 +143,20 @@ async def require_admin(user: Annotated[UserRecord, Depends(get_current_user)]) 
 CurrentUser = Annotated[UserRecord, Depends(get_current_user)]
 AdminUser = Annotated[UserRecord, Depends(require_admin)]
 DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_session_id(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> str:
+    """JWT session id ('sid') — pair with CurrentUser on endpoints that need
+    to attribute an action to a specific browser/client. Only decodes the
+    token (no DB roundtrip); the auth check is CurrentUser's job."""
+    if credentials is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+    return str(decode_token(credentials.credentials)["sid"])
+
+
+SessionId = Annotated[str, Depends(get_session_id)]
 
 
 def client_ip(request) -> str:

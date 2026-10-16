@@ -7,18 +7,19 @@ authenticates here exactly like any external automation client would.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from app.core.config import get_settings
-from app.core.db import (IdentityProviderRecord, RoleRecord, SessionRecord,
-                         UserRecord, utcnow)
+from app.core.db import (AuditLogRecord, IdentityProviderRecord, RoleRecord,
+                         SessionRecord, UserRecord, utcnow)
 from app.core.security import (_bearer, CurrentUser, DbSession,
                                burn_password_time, client_ip,
                                create_token_pair, decode_token,
-                               verify_password)
+                               token_hash, verify_password)
 from app.events import notify_event
 from app.services import (create_session_record, record, revoke_session)
 from shared.enums import AuditAction, AuthProvider, UserRole
@@ -28,6 +29,26 @@ from shared.models import (Heartbeat, LoginRequest, OIDCAuthorizeOut,
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Brute-force protection, ENFORCED HERE (the frontend's in-memory limiter is
+# trivially bypassed by calling the API directly). Backed by the audit table
+# so the limit is shared across every backend replica and survives
+# restarts; LOGIN_FAILED entries are committed before the 401 is raised.
+_LOGIN_WINDOW_SECONDS = 900   # 15 min sliding window
+_LOGIN_MAX_FAILURES = 10       # per IP OR per username, then locked out
+
+
+async def _recent_login_failures(session, *, ip: str, username: str) -> int:
+    """Failed logins from this IP or for this username within the window."""
+    cutoff = utcnow() - timedelta(seconds=_LOGIN_WINDOW_SECONDS)
+    return (await session.execute(
+        select(func.count()).select_from(AuditLogRecord).where(
+            AuditLogRecord.action == AuditAction.LOGIN_FAILED.value,
+            AuditLogRecord.created_at >= cutoff,
+            or_(AuditLogRecord.ip == ip,
+                AuditLogRecord.username == username),
+        )
+    )).scalar_one()
 
 
 def _user_agent(request: Request) -> str | None:
@@ -55,6 +76,19 @@ def _user_out(user: UserRecord) -> UserOut:
 async def login(body: LoginRequest, request: Request, session: DbSession) -> TokenPair:
     """Authenticate any client (frontend or automation) and return a JWT pair."""
     username = body.username.strip()
+
+    # Brute-force guard BEFORE any password work: a locked-out caller gets
+    # the same CPU burn as a wrong password, so timing never leaks whether
+    # the username exists or the account is locked.
+    ip = client_ip(request)
+    if await _recent_login_failures(session, ip=ip, username=username) \
+            >= _LOGIN_MAX_FAILURES:
+        burn_password_time(body.password)
+        logger.warning("Login refused (rate limited): username=%r ip=%s",
+                       username, ip)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "Too many failed attempts. Try again later.")
+
     user = (await session.scalars(
         select(UserRecord).where(UserRecord.username == username)
     )).first()
@@ -63,29 +97,39 @@ async def login(body: LoginRequest, request: Request, session: DbSession) -> Tok
         # Unknown user or federated (OIDC) account: burn the same CPU time so
         # the response delay never reveals whether the username exists.
         burn_password_time(body.password)
-        await record(session, AuditAction.LOGIN_FAILED, username=username, ip=client_ip(request))
+        await record(session, AuditAction.LOGIN_FAILED, username=username, ip=ip)
+        # Commit the failure BEFORE raising: the session dependency rolls
+        # back on the HTTPException — an unrecorded failure is invisible to
+        # both the audit trail and the brute-force guard above (observed:
+        # zero login_failed rows despite real failed attempts).
+        await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
     if not verify_password(body.password, user.password_hash):
         await record(session, AuditAction.LOGIN_FAILED, user_id=user.id,
-                     username=user.username, ip=client_ip(request))
+                     username=user.username, ip=ip)
+        await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
     if not user.is_active:
         await record(session, AuditAction.LOGIN_FAILED, user_id=user.id,
-                     username=user.username, details=_INACTIVE_MESSAGE, ip=client_ip(request))
+                     username=user.username, details=_INACTIVE_MESSAGE, ip=ip)
+        await session.commit()
         raise HTTPException(status.HTTP_403_FORBIDDEN, _INACTIVE_MESSAGE)
 
     client_label = request.headers.get("X-Client-Label", "web")[:32]
     session_record = await create_session_record(
         session, user,
         client=client_label,
-        ip=client_ip(request),
+        ip=ip,
         user_agent=_user_agent(request),
     )
     access, refresh, ttl = create_token_pair(user.id, session_record.id)
+    # Refresh-token rotation anchor: only the LATEST refresh token issued
+    # for this session stays valid (see /auth/refresh).
+    session_record.refresh_token_hash = token_hash(refresh)
     await record(session, AuditAction.LOGIN, user_id=user.id,
-                 username=user.username, ip=client_ip(request))
+                 username=user.username, ip=ip)
     # Live sessions list: a login changes who is connected — push it so the
     # Sessions tab refreshes instantly (SSE) instead of on its slow poll.
     await notify_event(session, "sessions_changed")
@@ -218,6 +262,8 @@ async def oidc_callback(idp_id: int, body: OIDCCallbackIn, request: Request,
         user_agent=_user_agent(request),
     )
     access, refresh, ttl = create_token_pair(user.id, session_record.id)
+    # Refresh-token rotation anchor (same as /auth/login).
+    session_record.refresh_token_hash = token_hash(refresh)
     await record(session, AuditAction.OIDC_LOGIN, user_id=user.id,
                  username=user.username, target=idp.name, ip=client_ip(request))
     await notify_event(session, "sessions_changed")
@@ -230,7 +276,15 @@ async def oidc_callback(idp_id: int, body: OIDCCallbackIn, request: Request,
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(body: dict, session: DbSession) -> TokenPair:
-    """Exchange a valid refresh token for a fresh JWT pair."""
+    """Exchange a valid refresh token for a fresh JWT pair (ROTATING).
+
+    Only the LATEST refresh token issued for the session is accepted: each
+    refresh stores the hash of the new token on the session record. A
+    presented token that does not match is a REPLAY of an already-used
+    (possibly stolen) token — the whole session is revoked immediately:
+    an attacker who copied the old token cannot use it, and the legitimate
+    user re-authenticates instead of silently racing the thief.
+    """
     token = (body or {}).get("refresh_token")
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh_token required")
@@ -240,9 +294,26 @@ async def refresh(body: dict, session: DbSession) -> TokenPair:
     record_ = await session.get(SessionRecord, sid)
     if record_ is None or record_.revoked_at is not None or record_.expires_at <= utcnow():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session revoked or expired")
+
+    presented_hash = token_hash(token)
+    if record_.refresh_token_hash and presented_hash != record_.refresh_token_hash:
+        # Replay of an already-rotated refresh token: treat the session as
+        # compromised and kill it everywhere (SSE session_revoked kicks the
+        # open tabs of that user).
+        record_.revoked_at = utcnow()
+        await record(session, AuditAction.REFRESH_REUSED, user_id=record_.user_id,
+                     details=f"session {sid[:8]}")
+        await notify_event(session, "session_revoked", session_id=sid)
+        await notify_event(session, "sessions_changed")
+        await session.commit()
+        logger.warning("Refresh token replay detected — session %s revoked", sid[:8])
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            "Session revoked (token replay)")
+
     record_.last_activity = utcnow()
 
     access, refresh_new, ttl = create_token_pair(int(payload["sub"]), sid)
+    record_.refresh_token_hash = token_hash(refresh_new)
     return TokenPair(access_token=access, refresh_token=refresh_new, expires_in=ttl,
                      session_id=sid)
 

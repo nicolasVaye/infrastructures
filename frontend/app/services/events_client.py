@@ -68,6 +68,11 @@ def handle_event(evt: dict) -> None:
             storage[key] = storage.get(key, 0) + 1
 
     elif etype == 'user_updated':
+        # Any user's profile changed (avatar, display name...) — the Users
+        # and Sessions tabs listen for this counter and re-fetch their data;
+        # their per-cell diff then re-renders ONLY the affected avatar/name
+        # cells instead of waiting for the next 15s poll.
+        storage['users_refresh_counter'] = storage.get('users_refresh_counter', 0) + 1
         if evt.get('user_id') == storage.get('user_id'):
             changed = (
                 bool(evt.get('has_avatar')) != bool(storage.get('has_avatar'))
@@ -105,6 +110,23 @@ def handle_event(evt: dict) -> None:
         # changed who is connected: let the Sessions tab refresh instantly.
         counter = storage.get('sessions_refresh_counter', 0)
         storage['sessions_refresh_counter'] = counter + 1
+
+    elif etype == 'app_settings_changed':
+        # The admin uploaded or reset the application logo (possibly from
+        # ANOTHER browser: app.storage.user is per-browser and cannot carry
+        # this). Bump the shared version — every tab's header timer re-renders
+        # the logo within ~2s (header.py) — and swap the favicon link hrefs
+        # with the new version so the browser drops its cached icon.
+        if evt.get('setting') == 'logo':
+            version = int(evt.get('version') or 0)
+            storage['logo_version'] = version
+            ui.run_javascript(
+                "document.querySelectorAll('link[rel=\"icon\"], "
+                "link[rel=\"apple-touch-icon\"]').forEach(function (l) {"
+                "  var base = (l.getAttribute('href') || '').split('?')[0];"
+                f"  l.setAttribute('href', base + '?v={version}');"
+                "});"
+            )
 
 
 async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
@@ -213,6 +235,8 @@ async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
                                     except ValueError:
                                         pass
         except asyncio.CancelledError:
+            logger.info('Event stream task cancelled (last_seq=%s)',
+                        state.get('last_seq', 0))
             raise
         except Exception as exc:  # noqa: BLE001 — always reconnect
             state['connected'] = False
@@ -225,7 +249,7 @@ async def _stream_loop(queue: asyncio.Queue, user_storage, state: dict) -> None:
 def install_event_listener() -> None:
     """Wire this tab's SSE listener + queue-draining timer (page context)."""
     import asyncio as _asyncio
-    from nicegui import app, ui
+    from nicegui import app, context, ui
 
     if app.storage.client.get('events_installed'):
         return
@@ -235,9 +259,34 @@ def install_event_listener() -> None:
     app.storage.client['events_queue'] = queue
     state = {'last_seq': 0}
     app.storage.client['events_state'] = state
-    task = _asyncio.create_task(_stream_loop(queue, app.storage.user, state))
-    app.storage.client['events_task'] = task
-    app.on_disconnect(lambda: task.cancel())
+    app.storage.client['events_task'] = _asyncio.create_task(
+        _stream_loop(queue, app.storage.user, state))
+
+    # Lifecycle hooks MUST be per-client: NiceGUI's app-level on_disconnect
+    # fires for EVERY disconnecting client (any tab, any browser, any user),
+    # so registering task.cancel() there let any unrelated disconnect kill
+    # this tab's stream — the silent "connected but starved" SSE zombie
+    # (cancelled task: no chunks, no watchdog, no read-timeout, no retry).
+    # Both handlers act on the CURRENT task, never a captured one.
+    client = context.client
+
+    def _cancel_stream() -> None:
+        task = app.storage.client.get('events_task')
+        if task is not None:
+            task.cancel()
+
+    def _rearm_stream() -> None:
+        # on_disconnect also fires on transient socket drops that reconnect
+        # seconds later (NiceGUI grace period), and the page builder does NOT
+        # re-run on reconnect: restart the stream task here so a websocket
+        # hiccup never leaves the tab without live events.
+        task = app.storage.client.get('events_task')
+        if task is None or task.done():
+            app.storage.client['events_task'] = _asyncio.create_task(
+                _stream_loop(queue, app.storage.user, state))
+
+    client.on_disconnect(_cancel_stream)
+    client.on_connect(_rearm_stream)
 
     def _drain() -> None:
         # Mirror the SSE loop's health into the SHARED user storage so the

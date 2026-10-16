@@ -46,6 +46,16 @@ class UserCreate(BaseModel):
     must_change_password: bool = True
 
 
+class UserCreatedOut(UserOut):
+    """Creation response: carries the one-time generated initial password.
+
+    When the caller does not provide a password, the backend generates a
+    RANDOM one (never a shared constant) and returns it exactly once here —
+    the admin relays it to the user, who must change it at first login.
+    """
+    initial_password: str | None = None
+
+
 class UserUpdate(BaseModel):
     role: UserRole | None = None
     is_active: bool | None = None

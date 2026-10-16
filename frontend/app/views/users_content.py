@@ -17,9 +17,9 @@ from models.audit import AuditAction
 from models.enums import UserRole
 from services.audit_service import record as audit_record
 from services.i18n import t
-from services.user_service import DEFAULT_USER_PASSWORD, UserService
-from services.tz import format_local, get_app_timezone
-from views._common import safe_auto_refresh
+from services.user_service import UserService
+from services.tz import get_app_timezone
+from views._common import activity_sparkline, safe_auto_refresh
 
 
 # The bootstrap admin is protected: it can never be deleted or disabled.
@@ -58,8 +58,17 @@ def roles_tab() -> None:
 # ================================================================= users tab
 def _users_tab(current_username: str) -> None:
 
-    @ui.refreshable
-    def user_table() -> None:
+    # Live-update granularity: every table row is a set of PER-CELL
+    # refreshables (avatar/user cell, role, source, online, activity,
+    # status, actions), each with its own signature. A refresh re-renders
+    # only the cells whose data moved — volatile cells (activity bars of
+    # the currently navigating user, online badges) no longer rebuild the
+    # avatar <img> of every row, which made all avatars blink. The whole
+    # row set is rebuilt only when a user is created or deleted.
+    state: dict = {'data': {}, 'order': [], 'rows': {}}
+
+    def _fetch() -> None:
+        """Refresh state['data'] / state['order'] from the backend."""
         with get_session() as session:
             users = [
                 {
@@ -84,167 +93,244 @@ def _users_tab(current_username: str) -> None:
         except Exception:  # noqa: BLE001 — column stays neutral on API error
             online = None
 
-        # 4-hour activity sparklines (GET /activity/users): one bar per
-        # 10-minute bucket. Same defensive pattern as `online`.
+        # 4-hour activity sparklines (GET /activity/users), cumulative per
+        # user across all their sessions/browsers. Same defensive pattern.
         try:
             with get_session() as session:
                 activity = {a['username']: a
                             for a in session.get('/activity/users') or []}
         except Exception:  # noqa: BLE001
             activity = None
-        display_tz = get_app_timezone()
 
-        with ui.column().classes('card w-full gap-0 p-0'):
-            # Header row
-            with ui.row().classes('w-full items-center px-4 py-3 label-text').style(
-                'border-bottom: 1px solid var(--border, #e4e4e7);'
-            ):
-                ui.label(t('users.col.user')).classes('flex-1')
-                ui.label(t('users.col.role')).style('width: 120px;')
-                ui.label(t('users.col.source')).style('width: 140px;')
-                ui.label(t('users.col.online')).style('width: 110px;')
-                ui.label(t('users.col.activity')).style('width: 150px;')
-                ui.label(t('users.col.status')).style('width: 120px;')
-                ui.label(t('users.col.actions')).style('width: 180px;')
+        state['order'] = [u['id'] for u in users]
+        state['data'] = {
+            u['id']: {
+                **u,
+                'online': online,
+                'act': (activity or {}).get(u['username'])
+                       if activity is not None else None,
+            }
+            for u in users
+        }
 
-            for u in users:
-                is_self = u['username'] == current_username
-                is_protected = u['username'] == _PROTECTED_USERNAME
-                badge_cls, badge_icon, _label_key = _ROLE_BADGE.get(
-                    u['role'], _ROLE_BADGE[UserRole.USER.value])
+    # -- per-cell signatures: a cell re-renders only when ITS data moved ----
+    def _sig_user(uid: int) -> tuple:
+        d = state['data'][uid]
+        return (d['username'], d['avatar'], d['must_change_password'],
+                d['auth_provider'])
 
-                with ui.row().classes('w-full items-center px-4 py-3').style(
-                    'border-bottom: 1px solid var(--border, #f4f4f5);'
+    def _sig_role(uid: int) -> tuple:
+        return (state['data'][uid]['role'],)
+
+    def _sig_source(uid: int) -> tuple:
+        d = state['data'][uid]
+        return (d['auth_provider'], d['idp_name'])
+
+    def _sig_online(uid: int) -> tuple:
+        d = state['data'][uid]
+        online = d['online']
+        return (None if online is None else d['username'] in online,)
+
+    def _sig_activity(uid: int, display_tz) -> tuple:
+        act = state['data'][uid]['act'] or {}
+        return (tuple(act.get('bars') or []), act.get('last15', 0),
+                act.get('last_activity'), str(display_tz))
+
+    def _sig_status(uid: int) -> tuple:
+        return (state['data'][uid]['is_active'],)
+
+    def _sig_actions(uid: int) -> tuple:
+        d = state['data'][uid]
+        return (d['is_active'], d['auth_provider'],
+                d['username'] == current_username,
+                d['username'] == _PROTECTED_USERNAME)
+
+    # -- cell renderers (read state['data'] at RENDER time) ------------------
+    def _render_user_cell(uid: int) -> None:
+        u = state['data'][uid]
+        with ui.row().classes('flex-1 items-center gap-3 min-w-0'):
+            if u.get('avatar'):
+                # Profile photo (data URL) — round, like the header.
+                ui.image(u['avatar']).style(
+                    'width: 32px; height: 32px; border-radius: 50%; '
+                    'object-fit: cover; flex-shrink: 0;'
+                )
+            else:
+                with ui.element('div').classes(
+                    'flex items-center justify-center rounded-full'
+                ).style(
+                    'width: 32px; height: 32px; background: #f4f4f5; '
+                    'color: #18181b; font-weight: 600; flex-shrink: 0;'
                 ):
-                    # User
-                    with ui.row().classes('flex-1 items-center gap-3 min-w-0'):
-                        if u.get('avatar'):
-                            # Profile photo (data URL) — round, like the header.
-                            ui.image(u['avatar']).style(
-                                'width: 32px; height: 32px; border-radius: 50%; '
-                                'object-fit: cover; flex-shrink: 0;'
-                            )
-                        else:
-                            with ui.element('div').classes(
-                                'flex items-center justify-center rounded-full'
-                            ).style(
-                                'width: 32px; height: 32px; background: #f4f4f5; '
-                                'color: #18181b; font-weight: 600; flex-shrink: 0;'
-                            ):
-                                ui.label(u['username'][:1].upper())
-                        with ui.column().classes('gap-0 min-w-0'):
-                            ui.label(u['username']).classes('truncate').style('font-weight: 500;')
-                            # Federated accounts have no local password: the
-                            # "password change pending" hint never applies.
-                            if u['must_change_password'] and u['auth_provider'] == 'local':
-                                ui.label(t('users.pw_pending')).classes('text-xs text-muted')
+                    ui.label(u['username'][:1].upper())
+            with ui.column().classes('gap-0 min-w-0'):
+                ui.label(u['username']).classes('truncate').style('font-weight: 500;')
+                # Federated accounts have no local password: the
+                # "password change pending" hint never applies.
+                if u['must_change_password'] and u['auth_provider'] == 'local':
+                    ui.label(t('users.pw_pending')).classes('text-xs text-muted')
 
-                    # Role
-                    with ui.element('div').style('width: 120px;'):
-                        with ui.element('span').classes(badge_cls).style('gap: 4px;'):
-                            ui.icon(badge_icon, size='0.9rem')
-                            ui.label(_role_label(u['role']))
+    def _render_role_cell(uid: int) -> None:
+        u = state['data'][uid]
+        badge_cls, badge_icon, _label_key = _ROLE_BADGE.get(
+            u['role'], _ROLE_BADGE[UserRole.USER.value])
+        with ui.element('span').classes(badge_cls).style('gap: 4px;'):
+            ui.icon(badge_icon, size='0.9rem')
+            ui.label(_role_label(u['role']))
 
-                    # Source: local account vs federated through an IdP.
-                    # The icon+badge make them visually distinct even if a
-                    # provider happens to be named "Local".
-                    with ui.element('div').style('width: 140px;'):
-                        if u['auth_provider'] == 'local':
-                            with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
-                                ui.icon('person', size='0.9rem')
-                                ui.label(t('users.source.local'))
-                        else:
-                            with ui.element('span').classes('badge badge-info').style('gap: 4px;'):
-                                ui.icon('vpn_key', size='0.9rem')
-                                ui.label(u['idp_name'] or t('users.source.idp'))
+    def _render_source_cell(uid: int) -> None:
+        u = state['data'][uid]
+        # Local account vs federated through an IdP. The icon+badge make
+        # them visually distinct even if a provider happens to be named
+        # "Local".
+        if u['auth_provider'] == 'local':
+            with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                ui.icon('person', size='0.9rem')
+                ui.label(t('users.source.local'))
+        else:
+            with ui.element('span').classes('badge badge-info').style('gap: 4px;'):
+                ui.icon('vpn_key', size='0.9rem')
+                ui.label(u['idp_name'] or t('users.source.idp'))
 
-                    # Online: holds at least one active session right now.
-                    with ui.element('div').style('width: 110px;'):
-                        if online is None:
-                            ui.label('—').classes('text-xs text-muted')
-                        elif u['username'] in online:
-                            with ui.element('span').classes('badge badge-success').style('gap: 4px;'):
-                                ui.icon('fiber_manual_record', size='0.6rem')
-                                ui.label(t('users.online'))
-                        else:
-                            with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
-                                ui.icon('fiber_manual_record', size='0.6rem')
-                                ui.label(t('users.offline'))
+    def _render_online_cell(uid: int) -> None:
+        u = state['data'][uid]
+        online = u['online']
+        if online is None:
+            ui.label('—').classes('text-xs text-muted')
+        elif u['username'] in online:
+            with ui.element('span').classes('badge badge-success').style('gap: 4px;'):
+                ui.icon('fiber_manual_record', size='0.6rem')
+                ui.label(t('users.online'))
+        else:
+            with ui.element('span').classes('badge badge-default').style('gap: 4px;'):
+                ui.icon('fiber_manual_record', size='0.6rem')
+                ui.label(t('users.offline'))
 
-                    # Activity sparkline: 24 bars = 10-minute buckets over
-                    # the last 4 hours (oldest first). Pure-CSS bars sized
-                    # inline; hover for the last-15-minutes detail.
-                    with ui.element('div').style('width: 150px;'):
-                        act = (activity or {}).get(u['username']) if activity is not None else None
-                        if act is None:
-                            ui.label('—').classes('text-xs text-muted')
-                        else:
-                            bars = act.get('bars') or []
-                            total = sum(bars)
-                            peak = max(bars) if bars else 0
-                            last_at = act.get('last_activity')
-                            tip = t('activity.tooltip').format(
-                                n4h=total,
-                                n15=act.get('last15', 0),
-                                last=format_local(last_at, display_tz) if last_at
-                                else t('activity.none'),
-                            )
-                            with ui.element('div').style(
-                                'display: flex; align-items: flex-end; gap: 1px; '
-                                'height: 30px; width: 100px; cursor: default;'
-                            ).tooltip(tip) as spark:
-                                for count in bars:
-                                    if count == 0:
-                                        height, bg = 2, 'var(--border)'
-                                    else:
-                                        height = max(4, round(count / max(peak, 1) * 28))
-                                        bg = 'var(--accent)'
-                                    ui.element('div').style(
-                                        f'width: 3px; height: {height}px; '
-                                        f'background: {bg}; border-radius: 1px;'
-                                    )
+    def _render_activity_cell(uid: int) -> None:
+        activity_sparkline(state['data'][uid].get('act'), get_app_timezone())
 
-                    # Status
-                    with ui.element('div').style('width: 120px;'):
-                        if u['is_active']:
-                            with ui.element('span').classes('badge badge-success'):
-                                ui.label(t('status.active'))
-                        else:
-                            with ui.element('span').classes('badge badge-default'):
-                                ui.label(t('status.inactive'))
+    def _render_status_cell(uid: int) -> None:
+        if state['data'][uid]['is_active']:
+            with ui.element('span').classes('badge badge-success'):
+                ui.label(t('status.active'))
+        else:
+            with ui.element('span').classes('badge badge-default'):
+                ui.label(t('status.inactive'))
 
-                    # Actions
-                    with ui.row().classes('items-center gap-1').style('width: 180px;'):
-                        reset_btn = ui.button(icon='lock_reset',
-                                              on_click=lambda _, uid=u['id']: _reset(uid)) \
-                            .props('flat dense round').tooltip(t('users.tip.reset'))
-                        # Federated accounts have no local password: the reset
-                        # button makes no sense for them.
-                        if u['auth_provider'] != 'local':
-                            reset_btn.disable()
-                            reset_btn.tooltip(t('users.tip.reset_federated'))
+    def _render_actions_cell(uid: int) -> None:
+        u = state['data'][uid]
+        is_self = u['username'] == current_username
+        is_protected = u['username'] == _PROTECTED_USERNAME
+        with ui.row().classes('items-center gap-1'):
+            reset_btn = ui.button(icon='lock_reset',
+                                  on_click=lambda _, uid=u['id']: _reset(uid)) \
+                .props('flat dense round').tooltip(t('users.tip.reset'))
+            # Federated accounts have no local password: the reset
+            # button makes no sense for them.
+            if u['auth_provider'] != 'local':
+                reset_btn.disable()
+                reset_btn.tooltip(t('users.tip.reset_federated'))
 
-                        role_btn = ui.button(
-                            icon='swap_horiz', on_click=lambda _, uid=u['id']: _change_role(uid)
-                        ).props('flat dense round').tooltip(t('users.tip.switch_role'))
+            role_btn = ui.button(
+                icon='swap_horiz', on_click=lambda _, uid=u['id']: _change_role(uid)
+            ).props('flat dense round').tooltip(t('users.tip.switch_role'))
 
-                        active_icon = 'block' if u['is_active'] else 'check_circle'
-                        active_btn = ui.button(
-                            icon=active_icon, on_click=lambda _, uid=u['id']: _toggle_active(uid)
-                        ).props('flat dense round').tooltip(
-                            t('users.tip.deactivate') if u['is_active'] else t('users.tip.activate')
-                        )
+            active_icon = 'block' if u['is_active'] else 'check_circle'
+            active_btn = ui.button(
+                icon=active_icon, on_click=lambda _, uid=u['id']: _toggle_active(uid)
+            ).props('flat dense round').tooltip(
+                t('users.tip.deactivate') if u['is_active'] else t('users.tip.activate')
+            )
 
-                        delete_btn = ui.button(
-                            icon='delete',
-                            on_click=lambda _, uid=u['id'], name=u['username']: _delete(uid, name),
-                        ).props('flat dense round color=negative').tooltip(t('users.tip.delete'))
+            delete_btn = ui.button(
+                icon='delete',
+                on_click=lambda _, uid=u['id'], name=u['username']: _delete(uid, name),
+            ).props('flat dense round color=negative').tooltip(t('users.tip.delete'))
 
-                        if is_protected or is_self:
-                            active_btn.disable()
-                            delete_btn.disable()
-                        if is_protected:
-                            role_btn.disable()
+            if is_protected or is_self:
+                active_btn.disable()
+                delete_btn.disable()
+            if is_protected:
+                role_btn.disable()
+
+    def _make_row(uid: int) -> dict:
+        """Build one table row as per-cell refreshables + signatures."""
+        display_tz = get_app_timezone()
+        cells: dict[str, object] = {}
+        sigs = {
+            'user': _sig_user(uid),
+            'role': _sig_role(uid),
+            'source': _sig_source(uid),
+            'online': _sig_online(uid),
+            'activity': _sig_activity(uid, display_tz),
+            'status': _sig_status(uid),
+            'actions': _sig_actions(uid),
+        }
+
+        def _cell(name: str, wrapper, render) -> None:
+            @ui.refreshable
+            def cell() -> None:
+                render()
+            with wrapper():
+                cell()
+            cells[name] = cell
+
+        with ui.row().classes('w-full items-center px-4 py-3').style(
+            'border-bottom: 1px solid var(--border, #f4f4f5);'
+        ):
+            _cell('user',
+                  lambda: ui.element('div').classes('flex-1 min-w-0'),
+                  lambda: _render_user_cell(uid))
+            _cell('role',
+                  lambda: ui.element('div').style('width: 120px;'),
+                  lambda: _render_role_cell(uid))
+            _cell('source',
+                  lambda: ui.element('div').style('width: 140px;'),
+                  lambda: _render_source_cell(uid))
+            _cell('online',
+                  lambda: ui.element('div').style('width: 110px;'),
+                  lambda: _render_online_cell(uid))
+            _cell('activity',
+                  lambda: ui.element('div').style('width: 150px;'),
+                  lambda: _render_activity_cell(uid))
+            _cell('status',
+                  lambda: ui.element('div').style('width: 120px;'),
+                  lambda: _render_status_cell(uid))
+            _cell('actions',
+                  lambda: ui.row().classes('items-center gap-1').style('width: 180px;'),
+                  lambda: _render_actions_cell(uid))
+        return {'cells': cells, 'sigs': sigs}
+
+    def _apply() -> None:
+        """Re-render ONLY the cells whose data actually changed."""
+        display_tz = get_app_timezone()
+        if state['order'] != list(state['rows'].keys()):
+            # A user was created or deleted: rebuild the rows container.
+            rows.clear()
+            state['rows'].clear()
+            with rows:
+                for uid in state['order']:
+                    state['rows'][uid] = _make_row(uid)
+            return
+        for uid in state['order']:
+            row = state['rows'][uid]
+            new_sigs = {
+                'user': _sig_user(uid),
+                'role': _sig_role(uid),
+                'source': _sig_source(uid),
+                'online': _sig_online(uid),
+                'activity': _sig_activity(uid, display_tz),
+                'status': _sig_status(uid),
+                'actions': _sig_actions(uid),
+            }
+            for name, sig in new_sigs.items():
+                if sig != row['sigs'].get(name):
+                    row['sigs'][name] = sig
+                    row['cells'][name].refresh()
+
+    def _reload() -> None:
+        _fetch()
+        _apply()
 
     # Action handlers
     async def _reset(uid: int) -> None:
@@ -252,13 +338,15 @@ def _users_tab(current_username: str) -> None:
             with get_session() as session:
                 service = UserService(session)
                 target = service.get_user(uid)
-                service.reset_password(uid)
+                new_password = service.reset_password(uid)
         except ValueError as exc:
             await info_dialog(str(exc), title=t('users.not_possible'), danger=True)
             return
         audit_record(AuditAction.PASSWORD_RESET, target=target.username if target else str(uid))
-        notify(t('users.pw_reset').format(pw=DEFAULT_USER_PASSWORD), type='positive')
-        user_table.refresh()
+        # The backend generates a RANDOM password per reset (never a shared
+        # constant): show the one-time value to the admin.
+        notify(t('users.pw_reset').format(pw=new_password or '—'), type='positive')
+        _reload()
 
     def _change_role(uid: int) -> None:
         """Open a dialog to pick any of the three roles (admin/operator/user)."""
@@ -296,7 +384,7 @@ def _users_tab(current_username: str) -> None:
                 notify(t('users.role_changed').format(name=user.username, role=_role_label(role.value)),
                        type='positive')
                 dialog.close()
-                user_table.refresh()
+                _reload()
 
             with ui.row().classes('w-full justify-end gap-2'):
                 ui.button(t('common.cancel'), on_click=dialog.close).classes('button button-secondary')
@@ -320,7 +408,7 @@ def _users_tab(current_username: str) -> None:
             AuditAction.USER_ACTIVATED if activated else AuditAction.USER_DEACTIVATED,
             target=user.username,
         )
-        user_table.refresh()
+        _reload()
 
     async def _delete(uid: int, name: str) -> None:
         confirmed = await confirm_dialog(
@@ -339,7 +427,7 @@ def _users_tab(current_username: str) -> None:
             return
         audit_record(AuditAction.USER_DELETED, target=name)
         notify(t('users.deleted').format(name=name), type='warning')
-        user_table.refresh()
+        _reload()
 
     # Create dialog — labeled fields + tooltips, all three roles offered.
     def _open_create_dialog() -> None:
@@ -369,9 +457,7 @@ def _users_tab(current_username: str) -> None:
                 'w-full p-2').style('background: var(--faint); border-radius: 6px;'):
                 with ui.row().classes('items-center gap-2'):
                     ui.icon('info', size='0.9rem').classes('text-muted')
-                    ui.label(
-                        t('users.initial_pw').format(pw=DEFAULT_USER_PASSWORD)
-                    ).classes('text-xs text-muted')
+                    ui.label(t('users.initial_pw')).classes('text-xs text-muted')
 
             async def create() -> None:
                 name = (username.value or '').strip()
@@ -384,14 +470,18 @@ def _users_tab(current_username: str) -> None:
                         if service.get_user_by_username(name) is not None:
                             notify(t('users.exists').format(name=name), type='negative')
                             return
-                        service.create_user(name, role=UserRole(role.value))
+                        _, initial_password = service.create_user(
+                            name, role=UserRole(role.value))
                 except ValueError as exc:
                     notify(str(exc), type='negative')
                     return
                 audit_record(AuditAction.USER_CREATED, target=name, details=role.value)
-                notify(t('users.created').format(name=name), type='positive')
+                # The initial password is generated server-side (random,
+                # one-time): show it to the admin exactly once.
+                notify(t('users.created_pw').format(pw=initial_password or '—'),
+                       type='positive')
                 dialog.close()
-                user_table.refresh()
+                _reload()
 
             with ui.row().classes('w-full justify-end gap-2'):
                 ui.button(t('common.cancel'), on_click=dialog.close).classes('button button-secondary')
@@ -403,42 +493,49 @@ def _users_tab(current_username: str) -> None:
         ui.button(t('users.create'), icon='person_add', on_click=_open_create_dialog) \
             .classes('button button-primary')
 
-    user_table()
+    # Static header; the rows live in their own container so a per-cell
+    # refresh never touches the header (and vice versa).
+    with ui.column().classes('card w-full gap-0 p-0'):
+        with ui.row().classes('w-full items-center px-4 py-3 label-text').style(
+            'border-bottom: 1px solid var(--border, #e4e4e7);'
+        ):
+            ui.label(t('users.col.user')).classes('flex-1')
+            ui.label(t('users.col.role')).style('width: 120px;')
+            ui.label(t('users.col.source')).style('width: 140px;')
+            ui.label(t('users.col.online')).style('width: 110px;')
+            ui.label(t('users.col.activity')).style('width: 150px;')
+            ui.label(t('users.col.status')).style('width: 120px;')
+            ui.label(t('users.col.actions')).style('width: 180px;')
+        rows = ui.column().classes('w-full gap-0')
 
-    # Live updates: same SSE-driven counter as the Sessions tab — a
-    # login/logout/kick anywhere (any browser, any user) refreshes the
-    # online badges instantly instead of waiting for the next visit.
-    seen = {'counter': app.storage.user.get('sessions_refresh_counter', 0)}
+    _reload()
+
+    # Live updates: two SSE-driven counters — 'sessions_refresh_counter'
+    # (login/logout/kick anywhere refreshes the online badges instantly)
+    # and 'users_refresh_counter' (avatar/name change anywhere re-renders
+    # the affected user cells immediately instead of waiting for the poll).
+    seen = {'sessions': app.storage.user.get('sessions_refresh_counter', 0),
+            'users': app.storage.user.get('users_refresh_counter', 0)}
 
     def _on_event() -> None:
+        changed = False
         counter = app.storage.user.get('sessions_refresh_counter', 0)
-        if counter != seen['counter']:
-            seen['counter'] = counter
-            safe_auto_refresh(user_table.refresh)()
+        if counter != seen['sessions']:
+            seen['sessions'] = counter
+            changed = True
+        counter = app.storage.user.get('users_refresh_counter', 0)
+        if counter != seen['users']:
+            seen['users'] = counter
+            changed = True
+        if changed:
+            safe_auto_refresh(_reload)()
 
     ui.timer(1.0, _on_event)
     # Fallback poll (SSE blind spots: browser closed without logout, stream
-    # briefly reconnecting). Signature-based: fetch the data, rebuild the
-    # table ONLY if something actually changed — an unconditional refresh
-    # every 15s made the whole panel visibly blink although nothing moved.
-    last_sig = {'value': None}
-
-    def _poll_signature() -> None:
-        try:
-            with get_session() as session:
-                online = frozenset(s['username'] for s in session.get('/sessions') or [])
-                activity = {a['username']: a
-                            for a in session.get('/activity/users') or []}
-        except Exception:  # noqa: BLE001 — offline / auth expired: skip
-            return
-        sig = (online,
-               tuple(sorted((name, tuple(a.get('bars') or []), a.get('last15', 0))
-                            for name, a in activity.items())))
-        if sig != last_sig['value']:
-            last_sig['value'] = sig
-            safe_auto_refresh(user_table.refresh)()
-
-    ui.timer(15.0, safe_auto_refresh(_poll_signature))
+    # briefly reconnecting). Signature-based: _reload re-renders ONLY the
+    # cells whose data moved — an unconditional full refresh every 15s made
+    # the whole panel visibly blink although nothing changed.
+    ui.timer(15.0, safe_auto_refresh(_reload))
 
 
 # ================================================================== roles tab

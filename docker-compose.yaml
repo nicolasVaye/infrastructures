@@ -36,7 +36,12 @@ services:
       # redirect_uri is {base}/auth/oidc/callback
       OIDC_REDIRECT_BASE_URL: ${OIDC_REDIRECT_BASE_URL:-http://localhost:8080}
     ports:
-      - "8000:8000"
+      # Localhost-only: the API is not meant to be exposed (the frontend
+      # proxies browser traffic over the compose network). A public port
+      # would let anyone bypass the frontend and hammer /auth/login
+      # directly — the backend now rate-limits, but there is no reason to
+      # keep the door open either.
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +83,12 @@ services:
     environment:
       BACKEND_URL: http://backend:8000
       STORAGE_SECRET: ${STORAGE_SECRET:-please-change-me}
+      # Shared storage backend for multi-replica deployments (see README):
+      # NiceGUI keeps its session storage in per-process FILES by default —
+      # with more than one frontend replica every browser session must land
+      # on the same replica (sticky sessions) OR the storage must be shared
+      # via Redis. Empty (default) = local file storage.
+      NICEGUI_REDIS_URL: ${NICEGUI_REDIS_URL:-}
     ports:
       - "8080:8080"
     depends_on:

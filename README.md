@@ -47,6 +47,8 @@ BACKEND_URL=http://localhost:8000 uv run python main.py   # frontend (depuis fro
 ```
 
 Sans Docker, le backend retombe sur SQLite (`DATABASE_URL` non définie) — pratique pour débugger.
+Le backend refuse de démarrer avec un `JWT_SECRET` faible/par défaut : en local, exportez un
+secret quelconque (≥ 32 caractères) ou `INSECURE_DEV=1` pour un bac à sable jetable.
 
 ## Authentification : une seule pour tous
 
@@ -116,12 +118,75 @@ Modifier un champ = une seule modification, les deux projets voient le changemen
 - Le **scheduler** (une instance, `SCHEDULER=1`) enfile périodiquement les jobs issus de la table
   `schedules` (CRON).
 
+## Sécurité
+
+Ce que la plateforme implémente aujourd'hui :
+
+- **Mots de passe** : PBKDF2-HMAC-SHA256 (260 000 itérations, sel aléatoire) ; les mots de passe
+  initiaux et de reset sont **aléatoires et uniques par compte** (affichés une seule fois à l'admin,
+  changement forcé à la première connexion) — plus aucun mot de passe partagé par défaut.
+- **Anti brute-force backend** : `POST /auth/login` refuse (429) après 10 échecs en 15 min,
+  comptés par IP **ou** par nom d'utilisateur. Le compteur est adossé à la table d'audit
+  (`login_failed`) : partagé entre toutes les répliques du backend et persistant aux redémarrages.
+  Le port API n'est publié que sur `127.0.0.1` — le navigateur ne doit jamais joindre le backend
+  en direct, le frontend proxifie tout.
+- **JWT** : access 30 min / refresh 12 h. **Rotation des refresh tokens** avec détection de
+  réutilisation : chaque refresh n'invalide plus seulement l'ancien token — un rejein d'un token
+  déjà consommé révoque immédiatement toute la session (audit `refresh_reused`, kick SSE).
+- **Secrets** : refus de démarrer avec un `JWT_SECRET` faible/par défaut (< 32 caractères ou
+  valeur connue). Opt-out local uniquement via `INSECURE_DEV=1`.
+- **Session navigateur** : cookie signé httpOnly SameSite=Lax ; le timeout d'inactivité (30 min)
+  est alimenté par le heartbeat (une SPA n'émet pas de requêtes HTTP) ; cap absolu 12 h.
+- **Sessions backend** : heartbeat toutes les 15 s, « connecté » = heartbeat < 3 min ; les
+  sessions zombies (navigateur fermé sans logout) sont visibles et filtrables dans l'onglet
+  Sessions jusqu'au job de maintenance nocturne.
+- **Audit trail** : logins, échecs de login, refresh rejeu, resets, CRUD — consultable côté admin.
+
+Reste volontairement non couvert (voir plus bas « ce qu'il reste à faire ») :
+
+- **CSP (Content-Security-Policy)** : un en-tête CSP strict casserait l'UI NiceGUI/Quasar telle
+  qu'elle est générée aujourd'hui. NiceGUI n'expose pas de hook pour injecter des *nonces* dans
+  le HTML qu'il produit (scripts inline partout, `eval` côté client, websocket, polices), donc
+  une policy utilisable serait de la forme
+  `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'`
+  — mieux que rien (elle bloque les sources externes) mais sans la garantie anti-XSS d'une CSP
+  par nonces. Recommandation : la poser sur le reverse-proxy de production une fois qu'il
+  existe, et la durcir à mesure que NiceGUI (issue ouverte côté framework) permettra les nonces.
+- **TLS inter-services** : aujourd'hui tout est HTTP à l'intérieur du réseau Docker (frontend →
+  backend → Postgres). Sur un hôte unique, le trafic ne quitte pas le kernel ; en scale-out
+  multi-hôtes, chiffrez le réseau overlay (Swarm/K8s) ou mettez du mTLS entre services —
+  sinon les JWT transitent en clair entre machines. Devant le frontend, un HTTPS terminating
+  (nginx/Caddy/Traefik) est indispensable dès que l'application quitte localhost.
+
 ## Ce qu'il reste à faire (volontairement hors squelette)
 
-- migrations Alembic (le squelette fait `create_all` + seed) ;
+- migrations Alembic (le squelette fait `create_all` + `ALTER IF NOT EXISTS` ciblés) ;
 - load-balancer / k8s (HPA), PgBouncer devant Postgres ;
-- rate limiting des endpoints (néj adoption de slowapi/traefik), refresh token rotation persistée ;
-- websocket/SSE pour le suivi de jobs temps réel (le client partagé fait du polling pour l'instant).
+- CSP sur le reverse-proxy de production (voir ci-dessus) ;
+- réseau inter-services chiffré pour le scale-out multi-hôtes (voir ci-dessus).
+
+## Ce qui est désormais couvert
+
+- temps réel SSE (LISTEN/NOTIFY → fanout → `/events`, replay `Last-Event-ID`, watchdog client) ;
+- rate limiting du login backend (audit-backed, multi-répliques) ;
+- rotation des refresh tokens avec détection de rejeu ;
+- mots de passe initiaux/reset aléatoires et uniques ;
+- refus de boot avec secrets faibles.
+
+### Montée en charge du frontend
+
+Au-delà d'une réplique frontend, les storages NiceGUI (sessions navigateur) doivent être
+**partagés** — par défaut ils vivent dans des fichiers locaux par process :
+
+```yaml
+# docker-compose.yaml, service frontend
+environment:
+  NICEGUI_REDIS_URL: redis://redis:6379    # storages partagés via Redis
+```
+
+Et gardez des **sticky sessions** au load-balancer : un client websocket NiceGUI doit retomber
+sur la même réplique. (Le backend, lui, est stateless : JWT + sessions en base + notifications
+`pg_notify`, il se scale librement.)
 
 ## Tests
 

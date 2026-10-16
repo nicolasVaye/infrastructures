@@ -23,3 +23,7 @@ class SessionOut(BaseModel):
     auth_provider: str = "local"
     idp_name: str | None = None
     avatar: str | None = None
+    # False when the session is no longer "connected" (no heartbeat within
+    # the TTL) but still lingering un-revoked in the DB until the cleanup
+    # job sweeps it: the Sessions tab renders those as inactive.
+    active: bool = True

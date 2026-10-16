@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from datetime import timedelta
 
-from app.core.db import utcnow
+from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import select
+
+from app.core.config import get_settings
+from app.core.db import SessionRecord, utcnow
 from app.core.security import AdminUser, CurrentUser, DbSession
 from app.events import notify_event
 from app.services import connected_sessions, record, revoke_session
@@ -15,10 +19,36 @@ router = APIRouter(tags=["sessions"])
 
 
 @router.get("/sessions", response_model=list[SessionOut])
-async def list_sessions(admin: AdminUser, session: DbSession) -> list[SessionOut]:
-    """Admin view: all currently connected clients (web or automation)."""
+async def list_sessions(admin: AdminUser, session: DbSession,
+                        include_inactive: bool = False) -> list[SessionOut]:
+    """Admin view: all currently connected clients (web or automation).
+
+    With ``include_inactive`` the response ALSO carries the zombie sessions:
+    not revoked and not expired, but silent for longer than the heartbeat
+    TTL (browser closed without logout). They stay in the DB until the
+    maintenance cleanup job sweeps them — the Sessions tab can show them
+    (flagged ``active=False``) so the admin sees the difference between
+    "connected" and "leftover" instead of trusting a list that mixes both.
+    """
     records = await connected_sessions(session)
-    return [SessionOut.model_validate(r) for r in records]
+    out = [SessionOut.model_validate(r) for r in records]
+    for s in out:
+        s.active = True
+    if include_inactive:
+        settings = get_settings()
+        threshold = utcnow() - timedelta(seconds=settings.heartbeat_ttl_seconds)
+        stale = (await session.scalars(
+            select(SessionRecord).where(
+                SessionRecord.revoked_at.is_(None),
+                SessionRecord.expires_at > utcnow(),
+                SessionRecord.last_activity < threshold,
+            )
+        )).all()
+        for r in stale:
+            s = SessionOut.model_validate(r)
+            s.active = False
+            out.append(s)
+    return out
 
 
 @router.get("/sessions/mine", response_model=list[SessionOut])

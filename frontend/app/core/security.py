@@ -81,12 +81,16 @@ async def logout() -> None:
 
 
 # Route access control
-unrestricted_page_routes = {'/login', '/health', '/favicon.ico', '/logo', '/manifest.json', '/sw.js', '/auth/oidc/callback'}
+unrestricted_page_routes = {
+    '/login', '/health', '/favicon.ico', '/logo',
+    '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png',
+    '/apple-touch-icon.png',
+    '/manifest.json', '/sw.js', '/auth/oidc/callback',
+}
 
 _PUBLIC_ASSET_PREFIXES = (
     '/assets/css/',
     '/assets/images/',
-    '/assets/icons/',
     '/assets/fonts/',
 )
 
@@ -171,6 +175,33 @@ def record_attempt(ip: str, success: bool) -> tuple[bool, str]:
 _ALWAYS_PASS = ('/_nicegui', '/_starlette')
 
 
+# Session-less public routes: favicon, logo, PWA icons, manifest, service
+# worker. Some engines (observed: WebKitGTK / GNOME Epiphany) fetch these
+# WITHOUT the session cookie (favicon loader, SW update checks) — and since
+# they are custom routes (not static files), every such cookiless request
+# mints a fresh EMPTY session id whose Set-Cookie then OVERWRITES the
+# browser's authenticated cookie. The next F5 then resolves an empty
+# storage and lands on /login although the tab was demonstrably alive
+# (backend session heartbeating). These routes never need a session: drop
+# their Set-Cookie and the browser cookie can no longer be rotated.
+_COOKIE_SAFE_PATHS = ('/favicon.ico', '/logo', '/manifest.json', '/sw.js',
+                      '/apple-touch-icon.png')
+_COOKIE_SAFE_PREFIXES = ('/icon-', '/assets/')
+
+
+class CookieRotationGuard(BaseHTTPMiddleware):
+    """Strip Set-Cookie from session-less public routes (see above)."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if 'set-cookie' in response.headers and (
+                path in _COOKIE_SAFE_PATHS
+                or any(path.startswith(p) for p in _COOKIE_SAFE_PREFIXES)):
+            del response.headers['set-cookie']
+        return response
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Restricts access to authenticated users and enforces session timeouts."""
 
@@ -197,6 +228,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 app.storage.user.clear()
                 is_auth = False
                 if not is_public_asset:
+                    logger.info('Auth redirect: browser session %s (path=%s)', reason, path)
                     if path.startswith('/api/'):
                         return JSONResponse({'error': 'Session expired'}, status_code=401)
                     return RedirectResponse(f'/login?reason={reason}')
@@ -213,6 +245,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not is_auth and path not in unrestricted_page_routes and not is_public_asset:
             if path.startswith('/api/'):
                 return JSONResponse({'error': 'Unauthorized'}, status_code=401)
+            # Login diagnostics: an unexpected "back to /login" has two very
+            # different causes — the browser sent NO session cookie (cookie
+            # policy / engine quirk, e.g. WebKitGTK on localhost) or the
+            # cookie is fine but the storage resolved empty. Indistinguishable
+            # from the UI; this line settles it in the logs.
+            logger.info('Auth redirect: unauthenticated (path=%s, session_cookie=%s)',
+                        path, 'present' if request.cookies.get('session') else 'ABSENT')
             return RedirectResponse(f'/login?redirect_to={path}')
 
         return await call_next(request)

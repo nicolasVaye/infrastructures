@@ -337,6 +337,10 @@ def _logo_section() -> None:
         except Exception:  # noqa: BLE001 — backend unreachable / auth expired
             notify(t('appsettings.logo_save_failed'), type='negative')
             return
+        # The logo/favicon/icon routes cache the backend payload for up to a
+        # minute: drop it now so every tab picks the new logo instantly.
+        from core.backend_assets import invalidate
+        invalidate()
         # Live-reload the logo in every open tab (same pattern as the avatar).
         app.storage.user['logo_version'] = state['version']
         notify(t('appsettings.logo_saved'), type='positive')
@@ -349,6 +353,8 @@ def _logo_section() -> None:
         except Exception:  # noqa: BLE001
             notify(t('appsettings.logo_save_failed'), type='negative')
             return
+        from core.backend_assets import invalidate
+        invalidate()
         state['version'] += 1
         app.storage.user['logo_version'] = state['version']
         notify(t('appsettings.logo_reset'), type='positive')

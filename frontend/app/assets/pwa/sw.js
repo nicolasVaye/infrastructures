@@ -6,11 +6,11 @@
 // handler below deletes any older cache name, so every client picks the new
 // files on the FIRST load after the service worker refreshes (otherwise the
 // stale-while-revalidate strategy below keeps serving the previous CSS/JS).
-const CACHE = 'nicestack-v7.39.1';
+const CACHE = 'nicestack-v7.46.2';
 const PRECACHE = [
   '/assets/css/global-css.css',
   '/assets/css/icons.css',
-  '/assets/images/logo.png',
+  '/assets/images/logo.svg',
 ];
 
 self.addEventListener('install', (event) => {

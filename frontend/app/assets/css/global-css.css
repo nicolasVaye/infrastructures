@@ -528,7 +528,11 @@ body { font-size: var(--app-font-size) !important; }
   border-radius: 8px;
   color: var(--muted-fg);
   z-index: 3000;
-  transition: left 0.3s ease-in-out, background var(--transition),
+  /* No 'left' transition here: the splitter JS follows the drawer's live
+     width frame-by-frame (rAF) while the drawer animates, so the handle
+     stays glued to its edge. A CSS transition on 'left' made it lag behind
+     and visually detach from the nav-bar during the toggle animation. */
+  transition: background var(--transition),
               color var(--transition), height var(--transition);
   user-select: none;
   touch-action: none;
@@ -680,8 +684,13 @@ q-menu {
   letter-spacing: -0.02em;
 }
 
+/* Drawer width animation (click-toggle). NO '!important' here: the splitter
+   JS disables this transition inline during a drag (transition: none) so the
+   drawer follows the mouse 1:1 — with !important the drawer kept easing
+   toward the cursor while the handle tracked it exactly, leaving a visible
+   gap between the two during the whole drag. */
 .q-drawer {
-  transition: width 0.3s cubic-bezier(0.4, 0.0, 0.2, 1) !important;
+  transition: width 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
 .sidebar-label {

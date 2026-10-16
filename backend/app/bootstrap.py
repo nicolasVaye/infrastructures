@@ -30,6 +30,34 @@ _SEED_ROLES = [
 # processes (API, worker, scheduler) start at the same time.
 _LOCK_KEY = 918273645
 
+# Known-default / weak JWT secrets: deploying with one of these means anyone
+# reading the public compose file can forge tokens. Refuse to boot instead.
+_WEAK_SECRETS = {
+    "change_me_in_production", "change-me-in-production", "changeme",
+    "please-change-me", "secret", "test", "test-secret", "insecure",
+}
+
+
+def validate_runtime_secrets() -> None:
+    """Refuse to start with a default/weak JWT_SECRET.
+
+    Called by every process (API, worker, scheduler) via ensure_schema, so a
+    misconfigured deployment fails loudly at boot instead of signing tokens
+    with a secret that ships in the public docker-compose.yaml. Throw-away
+    local environments can opt out with INSECURE_DEV=1.
+    """
+    import os
+    settings = get_settings()
+    if os.environ.get("INSECURE_DEV") == "1":
+        return
+    secret = settings.jwt_secret.strip()
+    if secret.lower() in _WEAK_SECRETS or len(secret) < 32:
+        raise RuntimeError(
+            "Refusing to start: JWT_SECRET is a known default or too weak "
+            f"(< 32 chars, got {len(secret)}). Set a strong JWT_SECRET, or "
+            "export INSECURE_DEV=1 only for throw-away local development."
+        )
+
 
 async def ensure_schema() -> None:
     """Create all tables if missing, then seed roles and the bootstrap admin.
@@ -39,6 +67,7 @@ async def ensure_schema() -> None:
     ``CREATE TABLE`` (duplicate pg_type) or double-seed the admin.
     """
     settings = get_settings()
+    validate_runtime_secrets()
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.execute(
@@ -54,6 +83,18 @@ async def ensure_schema() -> None:
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS theme"
             " VARCHAR(8) NOT NULL DEFAULT 'light'"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS session_id"
+            " VARCHAR(36)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_activity_events_session_id"
+            " ON activity_events (session_id)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS refresh_token_hash"
+            " VARCHAR(64)"
         ))
 
     async with get_session_factory()() as session:

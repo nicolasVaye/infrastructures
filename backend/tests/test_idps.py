@@ -21,6 +21,7 @@ def anyio_backend() -> str:
 async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/test.db")
     monkeypatch.setenv("JWT_SECRET", "test-secret")
+    monkeypatch.setenv("INSECURE_DEV", "1")
 
     from app.core import config
     config.get_settings.cache_clear()

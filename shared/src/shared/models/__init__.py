@@ -8,6 +8,7 @@ from shared.models.user import (
     RoleOut,
     TokenPair,
     UserCreate,
+    UserCreatedOut,
     UserOut,
     UserUpdate,
 )

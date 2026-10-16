@@ -41,6 +41,7 @@ class AuditAction(str, enum.Enum):
     LANGUAGE_CHANGED = "language_changed"
     THEME_CHANGED = "theme_changed"
     SESSION_REVOKED = "session_revoked"
+    REFRESH_REUSED = "refresh_reused"
     JOB_SUBMITTED = "job_submitted"
     JOB_CANCELLED = "job_cancelled"
 

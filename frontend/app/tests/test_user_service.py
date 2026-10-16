@@ -2,18 +2,22 @@
 
 from shared.enums import UserRole
 
-from services.user_service import DEFAULT_USER_PASSWORD, UserService
+from services.user_service import UserService
 
 
 def test_create_user_payload(fake_api_session):
     service = UserService(fake_api_session)
-    service.create_user('alice', role=UserRole.OPERATOR)
+    _, initial_password = service.create_user('alice', role=UserRole.OPERATOR)
     method, path, payload = fake_api_session.calls[-1]
     assert method == 'POST'
     assert path == '/users'
     assert payload['username'] == 'alice'
     assert payload['role'] == 'operator'
-    assert payload['password'] == DEFAULT_USER_PASSWORD
+    # The password is generated server-side (random, one-time): the create
+    # payload must NOT carry any password, and the one-time value is
+    # returned to the caller for display.
+    assert 'password' not in payload
+    assert initial_password is None or isinstance(initial_password, str)
 
 
 def test_create_user_empty_username_raises(fake_api_session):
